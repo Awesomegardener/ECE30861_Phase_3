@@ -1,0 +1,29 @@
+version: "3.8"
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: cra_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: cra_user
+      POSTGRES_PASSWORD: cra_password
+      POSTGRES_DB: cra_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  api:
+    build: .
+    container_name: cra_api
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgresql://cra_user:cra_password@db:5432/cra_db
+    depends_on:
+      - db
+
+volumes:
+  pgdata:
