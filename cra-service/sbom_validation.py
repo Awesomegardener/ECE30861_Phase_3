@@ -1,4 +1,4 @@
-"""Offline validation using the schema selected by the document's specVersion."""
+"""Validate supported CycloneDX schemas offline, then flatten inventory only."""
 
 import json
 from typing import Any
@@ -11,18 +11,14 @@ class InvalidSbom(ValueError):
     """A document cannot be safely normalized into the component API."""
 
 
-def _validators() -> dict[str, JsonStrictValidator]:
-    result = {}
-    for version in SchemaVersion:
-        try:
-            result[version.to_version()] = JsonStrictValidator(version)
-        except ValueError:
-            # CycloneDX 1.0/1.1 do not have packaged JSON schemas.
-            continue
-    return result
+SUPPORTED_SPEC_VERSIONS = ("1.4", "1.5", "1.6")
 
 
-VALIDATORS = _validators()
+VALIDATORS = {
+    version.to_version(): JsonStrictValidator(version)
+    for version in SchemaVersion
+    if version.to_version() in SUPPORTED_SPEC_VERSIONS
+}
 
 
 def validate_sbom(document: Any) -> list[dict[str, Any]]:
@@ -33,7 +29,10 @@ def validate_sbom(document: Any) -> list[dict[str, Any]]:
         raise InvalidSbom("specVersion is required and must be a string")
     validator = VALIDATORS.get(version)
     if validator is None:
-        raise InvalidSbom(f"No packaged CycloneDX JSON schema for specVersion {version!r}")
+        raise InvalidSbom(
+            f"Unsupported CycloneDX specVersion {version!r}; "
+            f"supported versions: {', '.join(SUPPORTED_SPEC_VERSIONS)}"
+        )
     try:
         serialized = json.dumps(document, allow_nan=False)
     except ValueError as exc:
@@ -46,12 +45,24 @@ def validate_sbom(document: Any) -> list[dict[str, Any]]:
         )
         raise InvalidSbom(f"{location}: {error.data.message}")
 
-    # Preserve existing normalization until open pod policies are resolved.
-    # The schema has already checked nested content, including tool metadata.
+    # Validate the whole document before normalization, including excluded metadata.
+    # Traverse only the inventory tree; metadata/component and metadata/tools are
+    # not inventory. Preserve occurrences rather than deduplicating name/version.
     components = document.get("components")
     if not isinstance(components, list):
         raise InvalidSbom("components must be an array")
-    for index, component in enumerate(components):
+    flattened = []
+    pending = [
+        (component, f"components[{index}]")
+        for index, component in reversed(list(enumerate(components)))
+    ]
+    while pending:
+        component, path = pending.pop()
         if not isinstance(component.get("version"), str):
-            raise InvalidSbom(f"components[{index}].version is required and must be a string")
-    return components
+            raise InvalidSbom(f"{path}.version is required and must be a string")
+        flattened.append(component)
+        pending.extend(
+            (child, f"{path}.components[{index}]")
+            for index, child in reversed(list(enumerate(component.get("components", []))))
+        )
+    return flattened

@@ -70,7 +70,18 @@ def main():
                     ).format(sql.Identifier(function), sql.Identifier(function))
                 )
             bom["components"][-1]["name"] = failure_name
-            code, error = request("PUT", path + "/sbom", bom)
+            replacement = {
+                **bom,
+                "components": [
+                    {
+                        "type": "application",
+                        "name": "replacement-parent",
+                        "version": "2",
+                        "components": bom["components"],
+                    }
+                ],
+            }
+            code, error = request("PUT", path + "/sbom", replacement)
             assert code == 500 and error["error"]["code"] == "DATABASE_ERROR"
             after = request("GET", path + "/components")[1]["components"]
             assert Counter(tuple(sorted(c.items())) for c in before) == Counter(
@@ -83,7 +94,8 @@ def main():
                 )
                 assert cur.fetchone()[0] == 0
             print(
-                "PASS: injected final INSERT failure; 25 prior components retained; JSON 500; no idle transactions."
+                "PASS: injected final nested INSERT failure; 25 prior components retained; "
+                "JSON 500; no idle transactions."
             )
         finally:
             with conn, conn.cursor() as cur:

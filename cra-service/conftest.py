@@ -114,6 +114,92 @@ def shared_sbom():
     return json.loads((ROOT / "fixtures/sbom_25_components.json").read_text(encoding="utf-8"))
 
 
+@pytest.fixture(params=["1.4", "1.5", "1.6"])
+def sbom_spec_version(request):
+    return request.param
+
+
+@pytest.fixture
+def nested_sbom(sbom_spec_version):
+    """Synthetic regression input, separate from the protected Team 6 fixtures."""
+
+    def leaf(reference):
+        return {
+            "type": "library",
+            "bom-ref": reference,
+            "name": "shared-leaf",
+            "version": "2.0",
+            "purl": "pkg:generic/shared-leaf@2.0",
+        }
+
+    tool = {
+        "type": "application",
+        "name": "tool-only",
+        "version": "99",
+        "components": [{"type": "library", "name": "tool-child", "version": "99"}],
+    }
+    return {
+        "bomFormat": "CycloneDX",
+        "specVersion": sbom_spec_version,
+        "version": 1,
+        "metadata": {
+            "component": {
+                "type": "application",
+                "name": "metadata-root",
+                "version": "99",
+                "components": [{"type": "library", "name": "metadata-child", "version": "99"}],
+            },
+            "tools": (
+                [{"vendor": "Regression tests", "name": "tool-only", "version": "99"}]
+                if sbom_spec_version == "1.4"
+                else {"components": [tool]}
+            ),
+        },
+        "components": [
+            {
+                "type": "application",
+                "name": "assembly-a",
+                "version": "1.0",
+                "components": [
+                    leaf("child-a"),
+                    {
+                        "type": "library",
+                        "name": "middle",
+                        "version": "3.0",
+                        "components": [
+                            {"type": "library", "name": "deep-leaf", "version": "4.0"},
+                            leaf("deep-copy"),
+                        ],
+                    },
+                ],
+            },
+            leaf("root-copy"),
+            {
+                "type": "library",
+                "name": "assembly-b",
+                "version": "5.0",
+                "components": [leaf("child-b")],
+            },
+        ],
+    }
+
+
+@pytest.fixture
+def nested_inventory():
+    # Independent flat oracle: four unique assemblies/leaves plus four occurrences
+    # of the same name/version/purl. The shared fixture itself is never edited.
+    return [
+        {"name": "assembly-a", "version": "1.0"},
+        {"name": "middle", "version": "3.0"},
+        {"name": "deep-leaf", "version": "4.0"},
+        {"name": "assembly-b", "version": "5.0"},
+        *[
+            {"name": "shared-leaf", "version": "2.0", "purl": "pkg:generic/shared-leaf@2.0"}
+            for _ in range(4)
+        ],
+    ]
+
+
 class Api:
     def __init__(self, base_url, spec, evidence):
         self.base_url = base_url.rstrip("/")
@@ -190,6 +276,12 @@ class Api:
             Draft202012Validator(
                 {"$ref": ref}, registry=self.registry, format_checker=FormatChecker()
             ).validate(response.json())
+        if response.status_code >= 400:
+            # Exact codes are asserted at explicitly agreed call sites, not
+            # globally: another implementation may use different unmapped codes.
+            assert response.json()["error"]["message"].strip(), (
+                "Error message must explain the failure"
+            )
 
     def create(self, payload=None):
         payload = payload or {

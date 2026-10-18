@@ -36,8 +36,8 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r cra-service/requirements-dev.txt
 docker compose -f cra-service/docker-compose.test.yml up --build -d --wait
 $testedCommit = (git rev-parse HEAD).Trim()
-.\.venv\Scripts\python.exe -B -m pytest cra-service --base-url http://127.0.0.1:18080 --allow-reset --capture-http-bodies --tested-commit $testedCommit --evidence-dir artifacts/local --junitxml=artifacts/local/results.xml
-.\.venv\Scripts\python.exe scripts/check_contract.py --evidence-dir artifacts/local
+.\.venv\Scripts\python.exe -X utf8 -B -m pytest cra-service --base-url http://127.0.0.1:18080 --allow-reset --capture-http-bodies --tested-commit $testedCommit --evidence-dir artifacts/local --junitxml=artifacts/local/results.xml
+.\.venv\Scripts\python.exe -X utf8 -B scripts/check_contract.py --evidence-dir artifacts/local
 ```
 
 For the internal SQL-failure regression check, run only inside the dedicated stack:
@@ -55,6 +55,9 @@ with a server root or `/api/v1` suffix. Fixture paths resolve relative to the
 repository, not the working directory. Every HTTP test resets its target and
 fixes the UTC clock. `--allow-reset` is required; coordinate before targeting
 another team's deployment. Do not select a database whose data must be retained.
+Use `-X utf8` on Windows: the installed CycloneDX validator opens its packaged
+schemas using Python's default text encoding, which may otherwise be a legacy
+locale. Docker/CI use UTF-8 environments.
 
 To stop the test stack while retaining its separate volume:
 
@@ -96,17 +99,19 @@ deployed-service verification must be recorded separately.
 .\.venv\Scripts\python.exe -m ruff check cra-service scripts
 .\.venv\Scripts\python.exe -m ruff format --check cra-service scripts
 .\.venv\Scripts\python.exe -m mypy
-.\.venv\Scripts\python.exe scripts/check_contract.py
+.\.venv\Scripts\python.exe -X utf8 -B scripts/check_contract.py
 ```
 
 GitHub Actions runs these checks and the Docker suite on Python 3.11, then uploads
-results/logs. The [verified successful run for commit `2a95313`](https://github.com/Awesomegardener/ECE30861_Phase_3/actions/runs/39082032962)
-passed 67 tests plus the SQL rollback check. The later clock/evidence changes have
-local verification recorded in `docs/testing.md`; that linked CI run predates
-them. Check GitHub Actions for the run associated with each later commit. The
-updated workflow also captures synthetic HTTP bodies and the checkout SHA. Merge
-blocking depends on branch protection; GitHub reported both branches unprotected
-during the readiness review.
+results/logs. The [main run for baseline commit `0c067d8`](https://github.com/Awesomegardener/ECE30861_Phase_3/actions/runs/39087275607)
+was verified successful. The nested-inventory/policy increment
+passed 264 local tests, including 157 HTTP tests against a fresh Docker stack and
+the separate forced nested-insert rollback check; see `docs/testing.md` for exact
+evidence and limits. That baseline run does not cover this increment; check
+GitHub Actions for the commit introducing it before claiming CI verification.
+The workflow captures synthetic HTTP bodies and the checkout SHA. Merge blocking
+depends on branch protection; both branches were reported unprotected during an
+earlier review, and that setting was not changed here.
 
 Ignored local `artifacts/` outputs include JUnit results, response observations,
 status JSON for all 17 contract operations, and protected-input hashes. Responses
@@ -119,12 +124,23 @@ are checked against shared OpenAPI 3.1 schemas, including date formats.
 - [Open pod decisions](docs/decisions.md)
 - [Implemented architecture and data model](docs/models.md)
 
-The shared fixture establishes the 25-component success case. Pending decisions
-include empty product/version values, supported CycloneDX versions, missing
-component versions, empty-document behavior, nested inventory counting,
-clock-input policy, exact errors, and reset defaults. Nested content is schema
-validated but storage remains top-level-only pending agreement. Phase 3 completion
-must not be claimed while this parsing risk remains unresolved.
+The unchanged shared fixture establishes the 25-component success case. The
+implementation accepts CycloneDX 1.4/1.5/1.6, validates the whole document and
+flattens root inventory descendants at every depth. Every inventory component
+must have a string version. Counts and storage retain repeated valid occurrences;
+metadata/tool subtrees are excluded. Identical sibling entries still fail the
+official schemas' uniqueness constraint. Replacement remains transactional.
 
-No remote deployment URL, registry update or two-way Team 2 result is verified.
-Those require approved hosting and coordinated testing.
+The user supplied Team 6 questions and Team 2 acceptance/recommendations. Final
+Team 6 acknowledgement of metadata/tool exclusion, occurrence retention and the
+wider exact-code testing policy is not documented. These implementation choices
+are not a newly approved shared contract; see `docs/decisions.md`. Open questions
+also include empty release strings, absent inventory arrays, clock/error details
+and reset defaults. Exact error assertions are limited to explicit missing-header
+`INVALID_REQUEST` and unchanged shared-fixture expectations; other errors need the
+contract envelope, expected status and meaningful nonempty reason.
+
+Google Cloud Run plus Cloud SQL PostgreSQL is the selected hosting plan, using
+`main`. No remote deployment URL, cloud resources, registry update or two-way Team 6
+result is verified. Cloud startup/health configuration, spending and deployment
+still require review/authorization and coordinated testing.

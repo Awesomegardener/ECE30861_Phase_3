@@ -1,9 +1,49 @@
 # ECE 30861 CRA Project — Context for Codex
 
-**Handoff date:** October 17, 2026  
+**Handoff date:** October 17, 2026; current implementation update October 18, 2026
 **Repository:** https://github.com/Awesomegardener/ECE30861_Phase_3  
 **Current emphasis:** Phase 3 milestone (first functioning deployed increment).  
-**Status disclaimer:** This document summarizes the submitted Phase 2/Phase 3 documents and a static review of the GitHub repository on October 17. It is *not* evidence that the implementation has been executed, deployed, or passed acceptance tests. Verify the current branch/commit before making changes.
+**Status disclaimer:** Sections describing the October 17 snapshot are historical.
+Current local verification is summarized below and in `testing.md`; it does not
+establish public availability or cross-team execution. Verify the current
+branch/commit and dirty state before making changes.
+
+## 0. Current implementation and supplied policy exchange
+
+- Local branch `main`, base commit `0c067d85d7977a32409fa3f552a225424a0b83c1`.
+  [GitHub Actions on that main commit](https://github.com/Awesomegardener/ECE30861_Phase_3/actions/runs/39087275607)
+  was checked and is successful. The following policy changes were tested as
+  working-tree changes before saving, so that baseline CI run does not verify
+  them. Check CI for the commit introducing this increment.
+- The original shared contract is present at `docs/openapi.yaml`; shared Team 6
+  fixtures are present under `fixtures/`. Neither is modified. Source precedence
+  remains OpenAPI, Phase 2 specification, assignment, then implementation.
+- The user supplied Team 6 questions and Team 2 responses on October 18. Team 2
+  accepted missing-header 400/`INVALID_REQUEST`, versions 1.4/1.5/1.6, required
+  versions throughout inventory, release-before-body validation, and recursive
+  flattening. Metadata/tool exclusion, occurrence retention and wider error-code
+  assertions remain Team 2 proposals without a supplied Team 6 acknowledgement.
+  See `decisions.md` for the comparison and evidence limits; do not label this a
+  newly approved shared OpenAPI revision.
+- The validator now uses only packaged 1.4/1.5/1.6 schemas, validates the entire
+  document, then walks only root inventory and its descendants. Every versioned
+  inventory occurrence is stored/counts; metadata/tool trees are excluded.
+  Missing descendant versions reject the whole upload before SQL replacement.
+  Existing header/existence ordering and atomic transaction handling are retained.
+- CycloneDX `uniqueItems` still rejects identical siblings. Valid repeats across
+  branches or with distinct identifiers are preserved. Relaxing schema validity
+  for duplicates would need contract reconciliation; it is not implemented.
+- Fresh isolated Docker verification on port 18082: baseline **153 passed**;
+  expanded suite **264 passed** (157 HTTP, 107 local), no failures/skips.
+  Forced final nested SQL INSERT failure preserves 25 old rows and leaves no
+  idle transactions. Detailed evidence and preservation checks are in `testing.md`.
+- Google Cloud Run plus Cloud SQL PostgreSQL, deploying approved `main` source,
+  is the selected hosting plan. No cloud configuration/resources or deployment
+  were created. Cloud-specific startup/health/PORT recommendations still need
+  review and implementation authorization. Keep both local Compose files.
+- The user reports teammate review/approval and has authorized committing/pushing
+  this increment directly to `main`. No Phase 4/5 functionality, shared-contract
+  revision or deployment is included. Peer-team coordination is with Team 6.
 
 ## 1. Product and regulatory context
 The EU **Cyber Resilience Act** (Regulation (EU) 2024/2847) imposes cybersecurity and vulnerability-management duties for products with digital elements. The selected project assists manufacturer product security engineers and compliance staff. The pod combined two Phase 1 ideas: release-indexed Software Bill of Materials (SBOM) inventory/vulnerability lookup and internal incident/report-deadline tracking. Its purpose is to track which supported shipped releases contain vulnerable software components and preserve evidence needed for reporting; **humans decide whether an issue is legally reportable, approve and submit regulatory reports, and perform remediation**.
@@ -12,7 +52,7 @@ Authoritative regulation: https://eur-lex.europa.eu/eli/reg/2024/2847/oj
 The project focuses on CRA Article 13 / Annex I Part II and Article 14. The student system is compliance *support*, not an automated determination of legal compliance.
 
 ## 2. Pod agreement and specification
-Phase 2 records a Team 2/Team 6 shared contract, **v1.0**, agreed September 24, 2026 (meeting documented September 26). The specification is described in **Phase 2 Section 5**, including an OpenAPI document in a separate shared Drive text file. **Obtain that exact document before asserting API conformance**. The Phase 2 PDF includes examples and most public paths, but does not reproduce the complete OpenAPI source.
+Phase 2 records a Team 2/Team 6 shared contract, **v1.0**, agreed September 24, 2026 (meeting documented September 26). The specification is described in **Phase 2 Section 5**, including an OpenAPI document originally supplied separately in Drive. That shared document is now in `docs/openapi.yaml`. The Phase 2 PDF includes examples and most public paths but does not reproduce the complete OpenAPI source; use the YAML for exact schemas and status codes.
 
 Broad system scope:
 - Included: product/release registration with support end; CycloneDX JSON upload; component lookup; CVE affected-release lookup grouped by support status; explicit unknown/unavailable CVE errors; incident cases with user-supplied awareness times and mandatory/voluntary classification; CRA deadline calculations; staged JSON report data; append-only durable audit trail.
@@ -71,7 +111,7 @@ Available Phase 2 examples include these operations:
 
 These are a **handoff summary, not a replacement for OpenAPI**. Validate required schemas, success codes, errors, paths, and test reset/clock semantics from the shared contract. Phase 2 specifies test operations for repeatability and no authentication for the common test interface; mutation attribution uses `X-User-Id` but is not itself authentication.
 
-## 6. Existing GitHub repository: static snapshot reviewed
+## 6. Historical October 17 repository snapshot (superseded by section 0)
 Repository: https://github.com/Awesomegardener/ECE30861_Phase_3  
 Reviewed uploaded commit: `99147b3bf9e2f1c02f54bd017a126b66e776fef3` on `main` (October 17, 2026). Clone/fetch before making assumptions.
 
@@ -108,19 +148,21 @@ The Phase 3 assignment asks for:
 3. **One line for every contract operation**, whether implemented or not, with success/error conformance; contract changes and pod approval (if any).
 4. Test runner/base URL, AC-to-test mapping, failure-path tests, regression/static CI, and actual test-run counts/failures.
 5. Updated Phase 2 models reflecting *implemented* architecture (not imagined components), with consistency explanation.
-6. **Cross-team readiness:** run your suite on Team 2 and have their suite run on yours, record execution/results and one specification ambiguity found with resolution plan; Phase 3 emphasizes connectivity/well-formed reports, and cross-team outcomes begin counting in Phase 4.
+6. **Cross-team readiness:** run your suite on Team 6 and have their suite run on yours, record execution/results and one specification ambiguity found with resolution plan; Phase 3 emphasizes connectivity/well-formed reports, and cross-team outcomes begin counting in Phase 4.
 7. Remaining scope/limitations (`LIM` severity/workaround/target phase), Phase 4 milestone adjustments, and updated risks.
 8. **Per-teammate** factual GenAI use: what was delegated, verification, an actual error/correction, and agentic principles.
 9. Sources for regulation, tools/frameworks/services actually used.
 
 The phase also requires the class deployment registry entry to identify **both web service and automated test runner**. Do not invent a deployment or cross-team test result in the report.
 
-## 8. Recommended next session with Codex
-1. Open cloned repository in VS Code and ensure no uncommitted teammate edits are overwritten.
-2. Place original Phase 2 PDF, Phase 3 instructions, and especially the pod's **actual OpenAPI spec** under `docs/` or give Codex their exact local paths.
-3. Ask Codex to read `AGENTS.md`, this document, source files, tests, and the contract; produce a gap analysis/plan **before editing**.
-4. Approve a small initial patch: robust CycloneDX/input validation, DB readiness, configurable remote tests, full AC-01/02/03 tests.
-5. Run tests locally; set up CI; deploy after credentials and hosting are approved; test deployed API; coordinate two-way Team 2 cross-testing.
-6. Update models and the Phase 3 report with verified evidence and actual GenAI use for each team member.
-
-**Helpful opening prompt:** "Read AGENTS.md, docs/project_context.md, the real Phase 2 OpenAPI contract, and cra-service. Do not edit yet. Compare this commit against REQ-01/02, AC-01/02/03, and the Phase 3 rubric. Show the exact files and proposed changes, identify questions about the contract, and wait for approval."
+## 8. Remaining work after this increment
+1. Save the reviewed policy implementation under the user's explicit commit/push
+   authorization, then check CI for the resulting SHA and retain its evidence.
+2. Obtain Team 6 acknowledgement of the outstanding proposals in `decisions.md`;
+   reconcile any shared-contract changes through the pod before editing YAML.
+3. Review the Google Cloud plan, project/billing/region and startup/health changes.
+   Deploy only after explicit authorization, using a separate course-test database.
+4. Run the HTTP suite against the deployed URL with coordinated reset permission;
+   record source SHA, image/revision, persistence, logs and both testing directions.
+5. Update the class registry, implemented models and Phase 3 report with factual
+   test results, human AC-03 inspection and each teammate's own GenAI account.

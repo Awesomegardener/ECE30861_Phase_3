@@ -185,3 +185,33 @@ def test_evidence_retains_separate_runs(tmp_path):
     second = recorder(tmp_path).write()
     assert first != second and first.read_bytes() == original
     assert first.exists() and second.exists()
+
+
+@pytest.mark.parametrize("message", ["", " \t\n"])
+def test_error_envelope_checks_reject_empty_messages(tmp_path, contract, monkeypatch, message):
+    evidence = recorder(tmp_path, capture_bodies=True)
+    api = Api("https://service.invalid", contract, evidence)
+    result = response(
+        json.dumps({"error": {"code": "UNMAPPED_CODE", "message": message}}).encode(), status=404
+    )
+    monkeypatch.setattr(api.session, "request", lambda *args, **kwargs: result)
+    try:
+        with pytest.raises(AssertionError, match="Error message must explain"):
+            api.request("GET", "/releases/example")
+    finally:
+        api.session.close()
+    saved = json.loads(evidence.write().read_text())
+    assert saved["exchanges"][0]["schema_validation"] == "failed"
+
+
+def test_error_envelope_accepts_unagreed_code_values(tmp_path, contract, monkeypatch):
+    evidence = recorder(tmp_path)
+    api = Api("https://service.invalid", contract, evidence)
+    result = response(
+        b'{"error":{"code":"OTHER_TEAM_CODE","message":"Release not found"}}', status=404
+    )
+    monkeypatch.setattr(api.session, "request", lambda *args, **kwargs: result)
+    try:
+        assert api.request("GET", "/releases/example").status_code == 404
+    finally:
+        api.session.close()

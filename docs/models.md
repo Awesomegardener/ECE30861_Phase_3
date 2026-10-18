@@ -8,7 +8,7 @@ reports and audit storage are absent from this increment.
 ```mermaid
 flowchart LR
     U[Internal user or pod HTTP test runner] -->|JSON /api/v1| API[FastAPI service]
-    API -->|Validate declared CycloneDX schema offline| V[Packaged CycloneDX validators]
+    API -->|Validate declared 1.4, 1.5 or 1.6 schema offline| V[Packaged CycloneDX validators]
     API -->|Transactional SQL through psycopg2| DB[(PostgreSQL)]
     DB --> PV[Named persistent volume]
     API --> LOG[Request ID, user, status and latency logs]
@@ -50,7 +50,7 @@ always associates inserted components with an existing release.
 flowchart TD
     A[Check registered release] --> B[Parse JSON]
     B --> C[Validate whole CycloneDX document]
-    C --> D[Check current normalization requirements]
+    C --> D[Flatten inventory descendants; require every version]
     D --> E[Begin transaction and lock release row]
     E --> F[Delete prior components and insert replacement]
     F --> G[Commit and close resources]
@@ -60,9 +60,17 @@ flowchart TD
     F -->|Database failure| RB[Roll back and close resources]
 ```
 
-Unknown releases return 404. Metadata source/tool components are not inventory.
-Nested children are validated but not yet normalized into stored rows; that
-remaining Phase 3 risk is explicit in `decisions.md`.
+With the required user header present, unknown releases return 404 before content
+type, JSON or schema validation. Whole-document validation precedes traversal of
+root `components` and their inventory descendants at every depth. Every inventory
+component requires a string version before any replacement SQL is attempted.
+Metadata source/tool subtrees are schema validated but excluded from inventory.
+Repeated valid occurrences remain separate rows; identical siblings still fail
+CycloneDX `uniqueItems`. No API ordering or persisted parent relationship is added.
+The existing schema/transaction handles the flat occurrence list without a schema
+migration. Old omitted descendants require resubmitting the original SBOM; no
+existing records are rewritten by this change. Approval status for exclusion and
+occurrence policies is explicit in `decisions.md`.
 
 The Phase 2 design proposed Dependency-Track and more state entities; this model
 removes them from the implemented view rather than implying they are running.

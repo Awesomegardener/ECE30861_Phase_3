@@ -1,32 +1,41 @@
 # Phase 3 status
 
-Commit `2a95313d524e07072bead8eff0b6ea3035e2ecf8` on `phase3-improvements` passed
-[GitHub Actions](https://github.com/Awesomegardener/ECE30861_Phase_3/actions/runs/39082032962):
-67 tests, static checks, Docker startup and the SQL rollback check. The run
-completed on 2026-10-18 UTC. No public hosted availability or cross-team execution
-is implied by this CI result.
+Committed baseline `0c067d85d7977a32409fa3f552a225424a0b83c1` on `main` has a
+[successful GitHub Actions run](https://github.com/Awesomegardener/ECE30861_Phase_3/actions/runs/39087275607),
+confirmed on 2026-10-18. That run verifies the baseline. CI for the commit
+introducing the policy/normalization changes must be checked separately.
+No public hosted availability or
+cross-team execution is implied by either CI or local tests.
 
-The subsequent clock/evidence increment passed 153 local tests
-(100 HTTP and 53 local tests) against a fresh Docker test project on port 18081.
-Its report bundle contains 519 HTTP exchanges with timestamps, target/version
-provenance, and captured bodies. The original application on port 8080 and prior
-test stack on port 18080 were not refreshed or reset. Actual results and data
-preservation evidence are in `testing.md`. Hosted CI verification must be checked
-against the increment's own commit/run; the linked initial run only covers `2a95313`.
+The current supplied-policy increment passed **264 local tests**, comprising
+157 HTTP checks against a newly built Docker API/PostgreSQL stack and 107 local
+tests (51 SBOM, 42 clock, 10 evidence, 4 startup). The isolated project is
+`cra-phase3-pod-decisions-20261018`, port 18082. Its report evidence contains
+918 HTTP exchanges with UTC timestamps, captured bodies and base-SHA/dirty-source
+provenance. A forced final nested INSERT failure preserves 25 prior components
+and leaves no idle transactions. Details are in `testing.md`.
+
+Approval status: the user supplied Team 6 questions and Team 2 answers, and
+authorized compatible implementation. Team 2 acceptance is recorded; final Team 6
+acknowledgement of exclusion/occurrence and wider exact-code proposals is not.
+`decisions.md` distinguishes existing contract facts, supplied positions and
+remaining proposals. Shared OpenAPI and Team 6 fixtures are unchanged.
 
 ## Acceptance mapping
 
 | AC | Main automated checks | Current evidence |
 |---|---|---|
 | AC-01 / REQ-01 | `test_ac01_shared_release_cases`, `test_ac01_support_boundary`, `test_release_invalid_types_save_nothing` | Shared requests, rejection without a row, UTC boundary and rollover pass locally |
-| AC-02 / REQ-02 | `test_ac02_shared_25_components_are_isolated` | Exact 25-name/version/purl inventory under the first release and zero under the second pass locally |
-| AC-03 / REQ-02 | `test_ac03_invalid_sbom_never_changes_inventory`, `test_ac03_unknown_release_stores_nothing` | Malformed JSON, missing mandatory fields, plaintext and unknown release pass; populated inventory preservation also checked |
+| AC-02 / REQ-02 | `test_ac02_shared_25_components_are_isolated`, `test_ac02_nested_inventory_counts_isolation_and_replacement` | Unchanged shared 25-component inventory plus 1.4/1.5/1.6 nested inventories pass; exact occurrence counts, metadata/tool exclusion, repeat replacement and release isolation checked |
+| AC-03 / REQ-02 | `test_ac03_invalid_sbom_never_changes_inventory`, `test_ac03_unknown_release_stores_nothing`, `test_ac03_unknown_release_precedes_invalid_body`, `test_ac03_missing_nested_version_is_atomic`, `test_ac03_unsupported_spec_versions_are_atomic` | Malformed/invalid JSON, plaintext, unsupported versions, missing descendant versions and unknown releases rejected; both empty and populated inventory preservation checked |
 
-Oracles come from unchanged shared release expectations, the SBOM's own component
-tuples, the matching source lock file and OpenAPI schemas/statuses. No live CVE
-service or AI-generated expected inventory is used. Error reasons have explicit
-automated assertions and are now retained in opt-in HTTP response artifacts for
-human review. Capturing those artifacts does not constitute completed human review.
+Shared-case oracles come from unchanged release expectations, the SBOM's own
+component tuples, the matching source lock file and OpenAPI schemas/statuses.
+Added synthetic nested regressions use explicit flat expectations for small test
+trees; they supplement the agreed shared fixture and are not claimed as reviewed
+Team 6 data. No live CVE service is used. Error reasons have explicit automated
+assertions and are retained in opt-in HTTP response artifacts for human review.
+Capturing those artifacts does not constitute completed human review.
 
 ## Every shared operation
 
@@ -36,8 +45,8 @@ Paths have prefix `/api/v1`. “Observed” means local checks, not universal co
 |---|---|---|---|
 | POST /releases | REQ-01, future REQ-08 | Partial overall | 201/400/409 observed; audit absent; empty-string policy open |
 | GET /releases/{releaseId} | REQ-01 | Implemented | 200/404 observed; UTC boundary checked |
-| PUT /releases/{releaseId}/sbom | REQ-02, future REQ-08 | Partial overall | 200/400/404 observed; nested normalization and version policies open; audit absent |
-| GET /releases/{releaseId}/components | REQ-02 | Partial overall | 200/404 observed; complete shared flat fixture; nested inventory incomplete |
+| PUT /releases/{releaseId}/sbom | REQ-02, future REQ-08 | Phase 3 behavior implemented; audit later | 200/400/404 observed; recursive normalization and 1.4-1.6 support implemented under supplied policies; final proposal acknowledgement pending |
+| GET /releases/{releaseId}/components | REQ-02 | Implemented under supplied inventory policy | 200/404 observed; shared flat and recursive inventories with repeated occurrences checked |
 | GET /vulnerabilities/{cveId}/affected-releases | REQ-03/04, Phase 4 | No | Required 200/404/503 not implemented |
 | POST /incidents | REQ-05/06/08, Phase 4 | No | Required 201/400 not implemented |
 | GET /incidents/{incidentId} | REQ-05/06, Phase 4 | No | Required 200/404 not implemented |
@@ -69,11 +78,11 @@ this increment adds no new conversion policy for them.
 
 | ID | Severity | Limitation / workaround | Next action |
 |---|---|---|---|
-| LIM-01 | High | Nested inventory children are validated but not stored. Use the agreed flat fixture for current cross-tests. | Resolve normalization/counting with pod before claiming Phase 3 complete |
-| LIM-02 | Medium | Missing component version/array and supported-version policies are not fully specified. Existing rejection behavior remains. | Pod decision and matching tests |
+| LIM-01 | Medium for cross-team readiness | Recursive inventory is implemented/tested. Metadata/tool exclusion and occurrence retention are still Team 2 proposals, without supplied Team 6 acknowledgement. Identical sibling duplicates remain schema-invalid. | Obtain acknowledgement and record the schema-valid duplicate boundary; do not weaken CycloneDX validation |
+| LIM-02 | Medium | Version range and required descendant versions follow the supplied Team 2 acceptance. Metadata-only/absent-array input policy is still unspecified; existing behavior is retained. Old top-level records cannot recover omitted children without the original SBOM. | Retain final shared policy record; clarify absent-array behavior; coordinate any resubmission without resetting existing data |
 | LIM-03 | Medium | Product/version nonempty prose conflicts with YAML; timestamp/error/reset details are incomplete. | Reconcile documents without unilateral API changes |
 | LIM-04 | High for delivery | No verified network host, registry entry or cross-team execution. Local Docker and hosted CI evidence only. | Obtain hosting approval, deploy, record SHA/platform/availability and update registry |
-| LIM-05 | Medium | Initial commit has a verified CI pass; the clock/evidence increment has recorded local verification and needs its own hosted CI evidence. Branches were reported unprotected during review. | Retain the CI URL/results for the released SHA; configure required checks only if authorized |
+| LIM-05 | Medium | Baseline `0c067d8` has verified successful main CI. The policy increment has local verification recorded below; check CI for its released SHA separately. Branches were reported unprotected during earlier review; that setting was not rechecked or changed here. | Retain CI evidence for the new released SHA; user has authorized saving the reviewed increment to main |
 | LIM-06 | Medium for reporting | No measured server code coverage or recorded human AC-03 review. HTTP evidence is available for that review. | Coordinate server coverage and human review; do not confuse runner coverage with service coverage |
 
 Phase 4 remains REQ-03–06 / AC-04–07, including vulnerability fixture control.
@@ -89,10 +98,14 @@ No teammate activity, hosting result, or pod decision has been invented here.
 
 ## Remaining deployment and submission tasks
 
-- [ ] Agree on nested-component normalization and remaining input/reset policies with Team 6.
-- [ ] Retain the new CI URL and artifacts for the released clock/evidence commit.
-- [ ] Select and approve hosting, budget, region, availability and service ownership.
-- [ ] Create a separate hosted test database with private connectivity and new environment-managed credentials; preserve local databases.
+- [x] Implement and locally verify recursive inventory normalization and supplied 1.4/1.5/1.6 policy.
+- [ ] Obtain final Team 6 acknowledgement of the remaining proposals and exact error-code mappings; resolve input/reset questions.
+- [x] Retain successful main CI URL for committed baseline `0c067d8`.
+- [x] Obtain teammate review and user authorization to commit/push this increment to `main`.
+- [ ] Verify the increment's own CI run for its released SHA.
+- [x] Select Google Cloud Run and Cloud SQL PostgreSQL, using deployment branch `main`.
+- [ ] Approve Google Cloud project, budget, region, availability and service ownership, plus proposed startup/health changes.
+- [ ] Create a separate hosted test database with authenticated encrypted connectivity and new Secret Manager credentials; block direct public database access and preserve local databases.
 - [ ] Configure the API port, database-aware readiness, persistent storage, backups/recovery and timestamped logs.
 - [ ] Deploy an approved SHA/image over HTTPS; record runtime, region, release procedure and restrictions.
 - [ ] Run the complete HTTP suite against that hosted test service and retain target-specific evidence, JUnit results and normal-restart snapshots.

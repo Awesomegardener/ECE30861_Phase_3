@@ -104,6 +104,9 @@ def test_release_requires_nonempty_user(api, header):
         json={"product": "HeaderRouter", "version": "1", "support_end_date": "2027-01-01"},
     )
     assert response.status_code == 400
+    assert "X-User-Id" in response.json()["error"]["message"]
+    if header is None:
+        assert response.json()["error"]["code"] == "INVALID_REQUEST"
     api.create({"product": "HeaderRouter", "version": "1", "support_end_date": "2027-01-01"})
 
 
@@ -131,6 +134,10 @@ def invalid_payload(shared_sbom, kind):
         return {"data": "{", "headers": {"Content-Type": "application/json"}}, "JSON"
     if kind == "plaintext":
         return {"data": "This is not JSON", "headers": {"Content-Type": "text/plain"}}, "JSON"
+    if kind == "empty_body":
+        return {"data": b"", "headers": {"Content-Type": "application/json"}}, "JSON"
+    if kind == "invalid_encoding":
+        return {"data": b"\xff", "headers": {"Content-Type": "application/json"}}, "JSON"
     if kind.startswith("root_"):
         value = {"root_null": None, "root_array": [], "root_number": 1}[kind]
         return {
@@ -146,6 +153,9 @@ def invalid_payload(shared_sbom, kind):
     elif kind == "missing_name":
         del document["components"][-1]["name"]
         reason = "name"
+    elif kind == "missing_version":
+        del document["components"][-1]["version"]
+        reason = "version"
     elif kind == "wrong_version_type":
         document["components"][-1]["version"] = 1
         reason = "version"
@@ -158,6 +168,12 @@ def invalid_payload(shared_sbom, kind):
     elif kind == "invalid_nested_child":
         document["components"][-1]["components"] = [{"name": "nested-invalid", "version": "1"}]
         reason = "type"
+    elif kind == "wrong_nested_components_type":
+        document["components"][-1]["components"] = {}
+        reason = "components"
+    elif kind == "unsupported_spec_version":
+        document["specVersion"] = "1.7"
+        reason = "specVersion"
     else:
         raise AssertionError(kind)
     return {"json": document}, reason
@@ -166,6 +182,8 @@ def invalid_payload(shared_sbom, kind):
 INVALID_SBOMS = [
     "malformed",
     "plaintext",
+    "empty_body",
+    "invalid_encoding",
     "root_null",
     "root_array",
     "root_number",
@@ -173,10 +191,13 @@ INVALID_SBOMS = [
     "specVersion",
     "missing_type",
     "missing_name",
+    "missing_version",
     "wrong_version_type",
     "wrong_components_type",
     "null_component",
     "invalid_nested_child",
+    "wrong_nested_components_type",
+    "unsupported_spec_version",
 ]
 
 
@@ -227,7 +248,85 @@ def test_sbom_requires_nonempty_user(api, shared_sbom, header):
         headers={"X-User-Id": header},
     )
     assert response.status_code == 400
+    assert "X-User-Id" in response.json()["error"]["message"]
+    if header is None:
+        assert response.json()["error"]["code"] == "INVALID_REQUEST"
     assert api.components(release["release_id"]) == []
+
+
+@pytest.mark.parametrize("kind", INVALID_SBOMS)
+def test_ac03_unknown_release_precedes_invalid_body(api, shared_sbom, kind):
+    release = api.create()
+    release_id = release["release_id"]
+    assert api.request("PUT", f"/releases/{release_id}/sbom", json=shared_sbom).status_code == 200
+    before = inventory(api.components(release_id))
+    kwargs, _ = invalid_payload(shared_sbom, kind)
+    response = api.request("PUT", "/releases/not-registered/sbom", **kwargs)
+    assert response.status_code == 404
+    assert "not found" in response.json()["error"]["message"].lower()
+    assert inventory(api.components(release_id)) == before
+
+
+def test_ac02_nested_inventory_counts_isolation_and_replacement(api, nested_sbom, nested_inventory):
+    release = api.create()
+    release_id = release["release_id"]
+    other = api.create(
+        {"product": "TestRouter", "version": "other", "support_end_date": "2027-01-01"}
+    )
+    path = f"/releases/{release_id}/sbom"
+    for _ in range(2):
+        response = api.request("PUT", path, json=nested_sbom)
+        assert response.status_code == 200
+        assert response.json() == {"release_id": release_id, "component_count": 8}
+        assert inventory(api.components(release_id)) == inventory(nested_inventory)
+        assert api.components(other["release_id"]) == []
+    replacement = deepcopy(nested_sbom)
+    replacement["components"] = [{"type": "library", "name": "replacement", "version": "6.0"}]
+    response = api.request("PUT", path, json=replacement)
+    assert response.status_code == 200 and response.json()["component_count"] == 1
+    assert inventory(api.components(release_id)) == inventory(replacement["components"])
+    assert api.components(other["release_id"]) == []
+
+
+@pytest.mark.parametrize("depth", [0, 1, 2])
+@pytest.mark.parametrize("existing", [False, True], ids=["empty", "preserve-existing"])
+def test_ac03_missing_nested_version_is_atomic(api, nested_sbom, depth, existing):
+    release_id = api.create()["release_id"]
+    path = f"/releases/{release_id}/sbom"
+    if existing:
+        assert api.request("PUT", path, json=nested_sbom).status_code == 200
+    before = inventory(api.components(release_id))
+    component = nested_sbom["components"][0]
+    if depth >= 1:
+        component = component["components"][1]
+    if depth == 2:
+        component = component["components"][0]
+    del component["version"]
+    response = api.request("PUT", path, json=nested_sbom)
+    assert response.status_code == 400
+    assert "version" in response.json()["error"]["message"]
+    assert inventory(api.components(release_id)) == before
+
+
+@pytest.mark.parametrize("version", ["1.2", "1.3", "1.7", "2.0"])
+@pytest.mark.parametrize("existing", [False, True], ids=["empty", "preserve-existing"])
+def test_ac03_unsupported_spec_versions_are_atomic(api, shared_sbom, version, existing):
+    release_id = api.create()["release_id"]
+    path = f"/releases/{release_id}/sbom"
+    if existing:
+        assert api.request("PUT", path, json=shared_sbom).status_code == 200
+    before = inventory(api.components(release_id))
+    document = {
+        "bomFormat": "CycloneDX",
+        "specVersion": version,
+        "version": 1,
+        "components": [{"type": "library", "name": "example", "version": "1"}],
+    }
+    response = api.request("PUT", path, json=document)
+    assert response.status_code == 400
+    message = response.json()["error"]["message"]
+    assert "specVersion" in message and version in message
+    assert inventory(api.components(release_id)) == before
 
 
 def test_sbom_replacement_is_idempotent(api, shared_sbom):
@@ -273,7 +372,6 @@ def test_invalid_clock_preserves_reference(api, invalid_clock_input):
         "PUT", "/test/clock", json={"now": invalid_clock_input}, undocumented=True
     )
     assert response.status_code == 400
-    assert response.json()["error"]["code"] == "INVALID_REQUEST"
     assert "now" in response.json()["error"]["message"]
     for version, date, expected in [
         ("past", "2026-10-31", "unsupported"),
@@ -287,7 +385,7 @@ def test_invalid_clock_preserves_reference(api, invalid_clock_input):
 
 def test_clock_aware_input_uses_utc_date(api, valid_clock_case):
     value, expected = valid_clock_case
-    response = api.request("PUT", "/test/clock", json={"now": value})
+    response = api.request("PUT", "/test/clock", json={"now": value}, headers={"X-User-Id": None})
     assert response.status_code == 200
     assert response.json()["now"] == expected
     # A local date may differ from UTC; support ends on the normalized UTC date.

@@ -1,7 +1,7 @@
 # Phase 3 verification record
 
 This is a chronological record. Statements about uncommitted code or missing CI
-in earlier entries describe that stage; current CI and clock/evidence results are
+in earlier entries describe that stage; current CI and policy/test results are
 recorded at the end. Public deployment and cross-team tests remain unverified.
 
 ## Baseline — 2026-10-17
@@ -235,3 +235,105 @@ review, server code coverage, public availability or cross-team completion.
 
 RFC syntax reference used for this fix:
 https://www.rfc-editor.org/rfc/rfc3339.html#section-5.6.
+
+## Supplied policy and recursive inventory increment (2026-10-18)
+
+Base checkout: `main`, `0c067d85d7977a32409fa3f552a225424a0b83c1`. At the time
+of this local verification, the changes were uncommitted. The user supplied
+Team 6's questions and Team 2's answers;
+approval distinctions and the contract comparison are recorded in `decisions.md`.
+No shared YAML or Team 6 fixture edits are part of this increment.
+
+### Executed checks and regressions
+
+- Docker Desktop's engine was initially stopped. It was started for testing.
+  The six pre-existing containers and three pre-existing volumes were inventoried
+  before creating a test project. Only `cra_api` and `cra_postgres` were running;
+  the older test stacks were stopped and were not started/reset/rebuilt.
+- Created a new Compose project, `cra-phase3-pod-decisions-20261018`, using the
+  unchanged test Compose file, API `http://127.0.0.1:18082`, separate
+  `cra-phase3-pod-decisions-20261018_pgdata_test` volume and database `cra_test`.
+  No HTTP test targeted the original port 8080 or the prior 18080/18081 stacks.
+- Unchanged baseline: **153 passed**, no failures/skips, 18.08 seconds. Evidence:
+  `artifacts/pod-decisions/baseline/results.xml` and its unique HTTP bundle.
+- Before the validator fix, seven new nesting regressions failed as expected:
+  the three-version eight-occurrence case returned only three roots, repeated
+  branches returned two parents instead of four occurrences, and a 31-level
+  chain returned only its root. Evidence: `regressions-before.xml`.
+- After the validator fix: **51 SBOM unit tests passed**. Combined local checks:
+  **107 passed** (51 SBOM, 42 clock, 10 evidence, 4 startup).
+- Final complete suite: **264 passed, 0 failed, 0 skipped**, 30.34 seconds. Breakdown: **157
+  HTTP integration tests against the rebuilt Docker API/PostgreSQL stack** plus
+  the 107 local checks above. The Windows runner uses Python 3.12.14 and the
+  Docker API uses Python 3.11. The only reported warning is the existing dateutil
+  `utcfromtimestamp` deprecation.
+- Ruff lint and format checks pass for all 11 Python files; mypy passes both
+  service modules. Shared OpenAPI 3.1 validation passes, all 25 SBOM component
+  name/version pairs still match the shared lock file, and all 17 shared API
+  operations are reported by `scripts/check_contract.py`.
+- The isolated SQL rollback probe now fails the **last nested component INSERT**
+  after a replacement parent and earlier children have been processed. It
+  passes: JSON 500, all 25 prior components preserved, no idle transactions.
+  The probe removes its temporary trigger/function and never targets an
+  application database. It is separate from portable HTTP test counts.
+
+### Acceptance and policy coverage
+
+| Requirement/policy | Tests and checked outcomes |
+|---|---|
+| AC-01 / REQ-01 | Existing shared release cases, invalid types, UTC end-of-day/rollover and clock regressions remain passing. |
+| AC-02 / REQ-02 | Unchanged shared 25-component fixture still matches exactly and remains release-isolated. `test_ac02_nested_inventory_counts_isolation_and_replacement` checks 1.4/1.5/1.6: eight inventory occurrences, four repeated name/version/purl tuples, excluded metadata/tool trees, idempotent upload, replacement removal and second-release isolation. |
+| AC-03 / REQ-02 | Existing malformed JSON/plaintext/schema cases plus empty body, invalid encoding, missing component version, malformed nested arrays and unsupported specVersion. `test_ac03_missing_nested_version_is_atomic` covers three depths, all supported versions and empty/populated inventories. |
+| Release-before-body | `test_ac03_unknown_release_precedes_invalid_body` checks 18 invalid-body variants with a valid user header, always 404 and no change to an existing inventory. Missing-header/existence precedence is not newly specified. |
+| Supported schema versions | Real packaged schemas are used for 1.4/1.5/1.6. Unsupported 1.2/1.3/1.7/2.0 HTTP cases preserve empty or prior inventory; unit cases include other unsupported/malformed version strings. |
+| Required headers / test exemptions | POST release and PUT SBOM missing headers return exactly 400 `INVALID_REQUEST`; empty headers remain rejected. Valid clock-offset requests and reset requests explicitly omit the user header and pass. |
+| Error checks | HTTP errors require the shared envelope and a meaningful nonempty message. Exact code checks are limited to missing-header mapping and unchanged shared fixture expectations. Clock tests no longer impose an unagreed exact code. Local runner tests reject empty/whitespace messages but accept another team's unmapped code. |
+| Duplicate boundary | Unit tests retain identical versioned occurrences across separate branches and reject identical siblings under the official schemas. Eight-row HTTP inventories retain four matching name/version/purl occurrences rather than deduplicating. |
+| Whole-document validation | Excluded metadata is still schema checked; missing metadata/tool versions are not subjected to inventory-only requirements where the declared CycloneDX schema allows their absence. |
+
+### Evidence and preservation
+
+The final report directory is `artifacts/pod-decisions/final/`: JUnit results,
+unique HTTP bundles, operation observations/status and protected-input hashes.
+Each full run captures **918 HTTP exchanges**, all passing response checks, with
+no body truncation. Earlier bundles remain separate; use the latest bundle with
+the final JUnit file. The final bundle is
+`http-evidence-20261018T185836759080Z-4de1b353.json`; `verification-summary.json`
+records its counts and provenance. The supplied target SHA identifies the base checkout;
+dirty-state/source hashes and `docker-provenance.json` identify the actual
+uncommitted runtime. This is not a claim that the new code is already on GitHub.
+
+Preservation snapshots under `artifacts/pod-decisions/preservation-before.json`
+and `preservation-after.json` compare existing container identities/images,
+mounts/ports, running states, live table row counts/hashes and original volume
+presence. The original database remains **1 release / 0 components / 0 clock
+rows**. The original application was not refreshed. Stopped prior test
+containers/volumes are retained. Only the newly created test database receives
+the reset-based suite and SQL-failure probe; no existing project data is reset
+or deleted. Shared-input SHA-256 hashes match the six pre-edit files.
+The new test API/database were stopped after log capture, retaining their new
+named volume and test data. The original `cra_api` and `cra_postgres` remain
+healthy at their existing image versions; this increment did not refresh them.
+
+The committed baseline's [main GitHub Actions run](https://github.com/Awesomegardener/ECE30861_Phase_3/actions/runs/39087275607)
+was confirmed successful through the GitHub API. It does not verify these
+uncommitted changes. No new CI run, cross-team run, public deployment, human AC-03
+sign-off or server-coverage measurement is claimed.
+
+To reproduce in a **new, previously unused** isolated Compose project and port:
+
+```powershell
+$env:TEST_API_PORT = '18082'
+docker compose -p cra-phase3-pod-decisions-20261018 -f cra-service/docker-compose.test.yml up --build -d --wait
+.\.venv\Scripts\python.exe -X utf8 -B -m pytest cra-service --base-url http://127.0.0.1:18082 --allow-reset --capture-http-bodies --tested-commit 0c067d85d7977a32409fa3f552a225424a0b83c1 --evidence-dir artifacts/pod-decisions/final --junitxml=artifacts/pod-decisions/final/results.xml
+Get-Content -Raw scripts/check_local_rollback.py | docker compose -p cra-phase3-pod-decisions-20261018 -f cra-service/docker-compose.test.yml exec -T api python -
+.\.venv\Scripts\python.exe -X utf8 -B scripts/check_contract.py --evidence-dir artifacts/pod-decisions/final
+docker compose -p cra-phase3-pod-decisions-20261018 -f cra-service/docker-compose.test.yml stop
+```
+
+Choose another unused project/port if this one already contains data you want to
+keep. `stop` retains the new test volume and data; never add a volume-deletion
+flag. `-X utf8` avoids a Windows legacy-encoding failure when the library reads
+its packaged schemas. Use the actual target/base SHA and source/image evidence
+for subsequent versions. No Google Cloud or local application configuration was
+changed for this policy increment.
