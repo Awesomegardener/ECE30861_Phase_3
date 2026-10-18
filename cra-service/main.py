@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import json
 import logging
+import math
 import os
 import re
 import time
@@ -14,6 +15,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
+from psycopg2 import sql
 from psycopg2.extras import RealDictCursor
 from pydantic import AwareDatetime, BaseModel, Field, StrictStr, field_validator
 from sbom_validation import InvalidSbom, validate_sbom
@@ -28,11 +30,16 @@ logger = logging.getLogger("cra.service")
 async def lifespan(application: FastAPI):
     attempts = int(os.getenv("DB_STARTUP_ATTEMPTS", "30"))
     delay = float(os.getenv("DB_STARTUP_DELAY_SECONDS", "1"))
-    if attempts < 1 or delay < 0:
-        raise ValueError("Database startup attempts must be positive and delay nonnegative")
+    timeout = float(os.getenv("DB_STARTUP_TIMEOUT_SECONDS", "180"))
+    if attempts < 1 or not math.isfinite(delay) or delay < 0:
+        raise ValueError("Database startup attempts must be positive and delay finite/nonnegative")
+    if not math.isfinite(timeout) or timeout < 2:
+        raise ValueError("Database startup timeout must be finite and at least 2 seconds")
+    deadline = time.monotonic() + timeout
     for attempt in range(1, attempts + 1):
+        _startup_remaining_ms(deadline)
         try:
-            await run_in_threadpool(init_db)
+            await run_in_threadpool(init_db, deadline=deadline)
             break
         except psycopg2.OperationalError:
             logger.warning(
@@ -42,7 +49,8 @@ async def lifespan(application: FastAPI):
             )
             if attempt == attempts:
                 raise
-            await asyncio.sleep(delay)
+            remaining = _startup_remaining_ms(deadline) / 1000
+            await asyncio.sleep(min(delay, remaining))
     yield
 
 
@@ -110,18 +118,35 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 DB_URL = os.getenv("DATABASE_URL")
 
 
-def get_db_connection():
+def get_db_connection(
+    *,
+    connect_timeout: int = 5,
+    statement_timeout_ms: int | None = None,
+    lock_timeout_ms: int | None = None,
+    read_only: bool = False,
+):
     if not DB_URL:
         raise RuntimeError("DATABASE_URL must be configured")
+    options = "-c timezone=UTC"
+    for name, value in (
+        ("statement_timeout", statement_timeout_ms),
+        ("lock_timeout", lock_timeout_ms),
+    ):
+        if value is not None:
+            if value < 1:
+                raise ValueError(f"{name} must be positive")
+            options += f" -c {name}={value}"
+    if read_only:
+        options += " -c default_transaction_read_only=on"
     return psycopg2.connect(
-        DB_URL, cursor_factory=RealDictCursor, connect_timeout=5, options="-c timezone=UTC"
+        DB_URL, cursor_factory=RealDictCursor, connect_timeout=connect_timeout, options=options
     )
 
 
 @contextmanager
-def database():
+def database(**connection_options):
     """Commit on success, roll back on failure, and always close the connection."""
-    conn = get_db_connection()
+    conn = get_db_connection(**connection_options)
     try:
         with conn:
             yield conn
@@ -129,9 +154,45 @@ def database():
         conn.close()
 
 
-def init_db():
-    with database() as conn, conn.cursor() as cur:
-        cur.execute("""
+SCHEMA_LOCK_KEY = 30861003
+
+
+def _startup_remaining_ms(deadline: float) -> int:
+    remaining = int((deadline - time.monotonic()) * 1000)
+    if remaining <= 0:
+        raise TimeoutError("Database startup time budget exhausted")
+    return remaining
+
+
+def _startup_execute(cur, deadline, statement, parameters=None):
+    # Keep SQL waits inside the remaining startup budget. These settings are
+    # transaction-local and never change the database/server configuration.
+    timeout = min(5000, _startup_remaining_ms(deadline))
+    cur.execute("SELECT set_config('statement_timeout', %s, true)", (str(timeout),))
+    cur.execute(statement, parameters)
+
+
+def init_db(*, deadline: float | None = None):
+    if deadline is None:
+        deadline = time.monotonic() + 180
+    remaining = _startup_remaining_ms(deadline)
+    if remaining < 2000:
+        raise TimeoutError("Insufficient startup time for a database connection")
+    with (
+        database(
+            connect_timeout=min(5, remaining // 1000),
+            statement_timeout_ms=min(5000, remaining),
+            lock_timeout_ms=min(3000, remaining),
+        ) as conn,
+        conn.cursor() as cur,
+    ):
+        # Every revision uses the same transaction lock before inspecting or
+        # creating schema objects. Commit/rollback releases it automatically.
+        _startup_execute(cur, deadline, "SELECT pg_advisory_xact_lock(%s)", (SCHEMA_LOCK_KEY,))
+        _startup_execute(
+            cur,
+            deadline,
+            """
         CREATE TABLE IF NOT EXISTS releases (
             release_id VARCHAR(64) PRIMARY KEY,
             product TEXT NOT NULL,
@@ -139,12 +200,12 @@ def init_db():
             support_end_date DATE NOT NULL,
             UNIQUE(product, version)
         )
-        """)
-        # These preserving changes also upgrade an existing Phase 3 database.
-        cur.execute(
-            "ALTER TABLE releases ALTER COLUMN product TYPE TEXT, ALTER COLUMN version TYPE TEXT"
+        """,
         )
-        cur.execute("""
+        _startup_execute(
+            cur,
+            deadline,
+            """
         CREATE TABLE IF NOT EXISTS components (
             id SERIAL PRIMARY KEY,
             release_id VARCHAR(64) REFERENCES releases(release_id) ON DELETE CASCADE,
@@ -152,13 +213,73 @@ def init_db():
             version TEXT NOT NULL,
             purl TEXT
         )
-        """)
-        cur.execute(
-            "ALTER TABLE components ALTER COLUMN name TYPE TEXT, ALTER COLUMN version TYPE TEXT"
+        """,
         )
-        cur.execute(
-            "CREATE TABLE IF NOT EXISTS test_clock (id INT PRIMARY KEY, now TIMESTAMP WITH TIME ZONE)"
+        _startup_execute(
+            cur,
+            deadline,
+            "CREATE TABLE IF NOT EXISTS test_clock (id INT PRIMARY KEY, now TIMESTAMP WITH TIME ZONE)",
         )
+        _startup_execute(
+            cur,
+            deadline,
+            """
+            SELECT table_name, column_name, data_type FROM information_schema.columns
+            WHERE table_schema = current_schema() AND (
+                (table_name = 'releases' AND column_name IN ('product', 'version')) OR
+                (table_name = 'components' AND column_name IN ('name', 'version'))
+            )
+        """,
+        )
+        columns = cur.fetchall()
+        if {(c["table_name"], c["column_name"]) for c in columns} != {
+            ("releases", "product"),
+            ("releases", "version"),
+            ("components", "name"),
+            ("components", "version"),
+        }:
+            raise RuntimeError("Incomplete existing schema; manual migration required")
+        for column in columns:
+            if column["data_type"] != "text":
+                if column["data_type"] not in {"character varying", "character"}:
+                    raise RuntimeError("Unexpected existing column type; manual migration required")
+                # Retain the existing non-destructive VARCHAR -> TEXT upgrade,
+                # without taking ALTER TABLE locks on every warm/cold start.
+                _startup_execute(
+                    cur,
+                    deadline,
+                    sql.SQL("ALTER TABLE {} ALTER COLUMN {} TYPE TEXT").format(
+                        sql.Identifier(column["table_name"]),
+                        sql.Identifier(column["column_name"]),
+                    ),
+                )
+
+
+@app.get("/health/live", include_in_schema=False)
+def health_live():
+    return JSONResponse({"status": "alive"}, headers={"Cache-Control": "no-store"})
+
+
+def check_database_ready():
+    with (
+        database(
+            connect_timeout=2, statement_timeout_ms=1000, lock_timeout_ms=500, read_only=True
+        ) as conn,
+        conn.cursor() as cur,
+    ):
+        cur.execute("SELECT 1")
+
+
+@app.get("/health/ready", include_in_schema=False)
+def health_ready():
+    try:
+        check_database_ready()
+    except (psycopg2.Error, RuntimeError):
+        # Do not return hostnames, DSNs, credentials or PostgreSQL exception text.
+        return JSONResponse(
+            {"status": "unavailable"}, status_code=503, headers={"Cache-Control": "no-store"}
+        )
+    return JSONResponse({"status": "ready"}, headers={"Cache-Control": "no-store"})
 
 
 def get_current_time():

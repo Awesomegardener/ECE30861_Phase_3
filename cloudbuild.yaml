@@ -1,0 +1,17 @@
+# Build only. Run manually from the reviewed main SHA; deployment is separate.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --file
+      - cra-service/Dockerfile
+      - --tag
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/cra-api:$COMMIT_SHA
+      - cra-service
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/cra-api:$COMMIT_SHA
+substitutions:
+  _REGION: us-central1
+  _REPOSITORY: cra-phase3
+options:
+  logging: CLOUD_LOGGING_ONLY

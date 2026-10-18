@@ -337,3 +337,129 @@ flag. `-X utf8` avoids a Windows legacy-encoding failure when the library reads
 its packaged schemas. Use the actual target/base SHA and source/image evidence
 for subsequent versions. No Google Cloud or local application configuration was
 changed for this policy increment.
+
+## Google Cloud deployment readiness
+
+Executed October 18, 2026 on local `main`, base SHA
+`f27cfd5a901637525a0bf4dc9dce856fc1fd9903`. These deployment-readiness changes are
+**uncommitted/unpushed**. The baseline's [GitHub Actions run](https://github.com/Awesomegardener/ECE30861_Phase_3/actions/runs/39157992256)
+was independently checked through the GitHub API: completed/success for that exact
+SHA. It does not verify the new startup, health, Docker command or CI changes.
+No cloud resources, cloud build, deployed URL or hosted verification exists yet.
+
+### Scope and isolation
+
+Both Compose files, shared OpenAPI and five Team 6 fixture/source files are
+byte-for-byte unchanged, checked against SHA-256 snapshots. Tests used a new,
+previously unused project `cra-phase3-deployment-20261018`, port **18083**, separate
+`cra_test` database and `cra-phase3-deployment-20261018_pgdata_test` volume.
+Reset-based tests never targeted port 8080 or any earlier stack. Internal schema
+checks created three uniquely named databases only within the new test PostgreSQL
+instance; those databases were retained, not dropped. Container controls require
+an explicit `cra-phase3-deployment-*` project and validate service labels, test
+DSN/database and loopback port mappings before stopping anything.
+
+### Actual results
+
+| Check | Result |
+|---|---|
+| Final full pytest suite | **291 passed, 0 failed, 0 skipped**, 28.71 seconds |
+| Portable AC-01/02/03 and HTTP regressions | **157 passed** against the rebuilt Docker API; unchanged shared fixtures |
+| Other tests | **134 passed**: SBOM 51, clock 42, evidence 10, startup 15, health 8, deployment-helper 8 |
+| Ruff lint / formatting | Passed for all 15 Python files |
+| mypy | Passed for both service modules |
+| Shared contract / fixture check | OpenAPI 3.1 valid; all 25 component pairs match the source lock file; all 17 contract operations reported |
+| Build/workflow YAML | Parsed; correct Dockerfile/context, build-only steps, logging policy and isolated CI project checked locally; not submitted to Google Cloud |
+| Real schema integration | All six scenarios below passed on PostgreSQL 16 |
+| Real container integration | Default/custom port, invalid PORT, HTTP health outage/recovery, actual cold-start DB retry, API/DB persistence and graceful shutdown passed |
+| Existing forced SQL rollback regression | Passed: final nested INSERT failure returns JSON 500, retains all 25 prior components, no idle transactions |
+| Preservation | Original eight container identities/images/mounts/ports/running states and four existing volumes preserved; live application table fingerprints identical |
+
+Windows runner: Python 3.12.14; Docker API: Python 3.11. The only pytest warning is
+the existing dateutil `utcfromtimestamp` deprecation. New GitHub CI uses Python
+3.11 but has not executed for these working-tree changes.
+
+Startup regression coverage checks transient failures, attempt exhaustion, invalid
+attempt/delay/timeout configuration, deadline-limited sleep, fail-fast programming
+errors, expired budget before connection, and unchanged psycopg2 socket DSN
+passing. Health tests verify DB-independent liveness, healthy/unavailable readiness,
+generic error bodies, read-only bounded query configuration/resource cleanup,
+no-cache headers and exclusion from generated OpenAPI.
+
+`scripts/check_startup_schema.py` passed these real database scenarios:
+
+1. Six concurrent initializers using independent connections on a new empty schema.
+2. Legacy VARCHAR-to-TEXT upgrade preserves release, component and clock rows/timestamps.
+3. Repeat TEXT startup succeeds while another session holds ACCESS SHARE locks,
+   proving unnecessary exclusive ALTER locks are avoided.
+4. Contended advisory lock times out within the checked bound; a subsequent
+   initializer recovers and preserves rows.
+5. Readiness connection settings are read-only, UTC, statement timeout 1 second,
+   lock timeout 500 ms, without changing server defaults.
+6. Incompatible existing INTEGER product fails for manual review: original row
+   preserved, new DDL rolled back and transaction advisory lock released.
+
+The container helper initially failed because a newly published Docker port closed
+the HTTP connection before Uvicorn started (`RemoteDisconnected`). It was a runner
+retry defect. The helper now retries that transient response; a regression test
+passes. Its successful rerun additionally launches an API while the isolated DB
+is stopped, observes `database_not_ready`, restarts that DB, and verifies readiness
+recovers. It checks stored release/inventory equality after DB and API restarts,
+and a custom-port Uvicorn exits with code 0 after SIGTERM. The initial failed
+artifact is retained separately; no remaining test failures are known.
+
+### Evidence and data preservation
+
+Ignored `artifacts/deployment-readiness/final/` contains `results.xml`,
+`http-evidence-20261018T202652572927Z-1d8db57e.json`, operation observations/status,
+`deployment-runtime.json` (explicit passed status and HTTP exchanges),
+`deployment-runtime-initial.json`, source/image `docker-provenance.json`, logs and
+`verification-summary.json`. The portable HTTP bundle contains **918 exchanges**,
+UTC times, statuses, captured bodies and source/shared-input hashes. Earlier unique
+bundles are historical; use the named final bundle with the final JUnit file.
+The supplied SHA is the base checkout, not a claim that the dirty image is exactly
+that committed release. Image ID is
+`sha256:7b08d738c6d1b334f5784ef156d15a60acbc376fcbe2ef795b62481c3ccb9f02`;
+runtime `main.py`, validator and requirements bytes match the local sources.
+
+Before/after preservation and protected-input snapshots are one directory above
+`final/`. The original application still has **1 release / 0 components / 0 clock
+rows**, with identical row hashes. Its API and PostgreSQL containers remain on
+their original images and are not refreshed. Previous stopped test stacks remain
+stopped. The new test containers are stopped after collecting logs, retaining
+their new volume, databases and synthetic records; no volumes/databases are deleted.
+No generated evidence, passwords, `.env` or environment files are intended for Git.
+
+### Reproduce locally in a fresh project
+
+Choose another unused project and port if these already contain data to retain.
+These commands intentionally change/reset only the new isolated test data:
+
+```powershell
+$testProject = 'cra-phase3-deployment-REPLACE_WITH_UNIQUE_LOWERCASE_SUFFIX'
+$env:TEST_API_PORT = '18084'
+docker compose -p $testProject -f cra-service/docker-compose.test.yml up --build -d --wait --wait-timeout 240
+$testedBase = (git rev-parse HEAD).Trim()
+.\.venv\Scripts\python.exe -X utf8 -B -m pytest cra-service --base-url http://127.0.0.1:18084 --allow-reset --capture-http-bodies --tested-commit $testedBase --evidence-dir artifacts/deployment-readiness/new-run --junitxml=artifacts/deployment-readiness/new-run/results.xml
+Get-Content -Raw scripts/check_startup_schema.py | docker compose -p $testProject -f cra-service/docker-compose.test.yml exec -T api python -
+.\.venv\Scripts\python.exe -X utf8 -B scripts/check_deployment_runtime.py --project $testProject --evidence-dir artifacts/deployment-readiness/new-run
+Get-Content -Raw scripts/check_local_rollback.py | docker compose -p $testProject -f cra-service/docker-compose.test.yml exec -T api python -
+.\.venv\Scripts\python.exe -X utf8 -B scripts/check_contract.py --evidence-dir artifacts/deployment-readiness/new-run
+docker compose -p $testProject -f cra-service/docker-compose.test.yml stop
+```
+
+Docker must be on PATH, or pass its absolute path with `--docker` to the runtime
+helper. Replace the project suffix with lowercase letters/digits/hyphens. Run the
+README static commands too. CI mirrors the Docker checks using a fresh
+`cra-phase3-deployment-ci` project, captures logs/evidence, then removes only its
+ephemeral containers/network without deleting volumes. The startup script requires
+database-creation privileges available only in the isolated test instance; the
+proposed Cloud SQL runtime user deliberately lacks that privilege. These internal
+scripts are not appropriate for a deployed service or another team's DB.
+
+The [Console guide](deployment-google-cloud.md) lists remaining gates: approve
+project/budget/public test exposure, review/save the code and verify its own CI,
+build the reviewed SHA, configure IAM/SQL attachment/secret/probes, then run hosted
+HTTPS tests and persistence checks. Human AC-03 review and two-way Team 6 readiness
+tests are separate evidence still to collect. Local SQL connectivity tests do not
+verify Google-managed IAM, sockets, health routing or availability.

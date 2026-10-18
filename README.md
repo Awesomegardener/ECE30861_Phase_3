@@ -23,8 +23,14 @@ containing URL-special characters, configure an appropriately encoded
 
 Application: `http://localhost:8080`; generated docs: `/docs`. PostgreSQL uses
 the existing `pgdata` named volume and is bound to loopback. Schema initialization
-widens existing string columns without deleting records. Normal API/DB restarts
+serializes concurrent starts and widens existing string columns only when needed,
+without deleting records. Normal API/DB restarts
 retain data. Do not delete the database volume to upgrade the application.
+
+Operational health: `/health/live` returns 200 without querying PostgreSQL;
+`/health/ready` returns 200 after a short read-only query, or generic 503 when
+the database is unavailable. Both omit shared API schemas. Docker uses `PORT`
+when provided and defaults to 8080; the existing Compose mappings stay unchanged.
 
 ## Run tests without clearing application data
 
@@ -103,12 +109,14 @@ deployed-service verification must be recorded separately.
 ```
 
 GitHub Actions runs these checks and the Docker suite on Python 3.11, then uploads
-results/logs. The [main run for baseline commit `0c067d8`](https://github.com/Awesomegardener/ECE30861_Phase_3/actions/runs/39087275607)
-was verified successful. The nested-inventory/policy increment
-passed 264 local tests, including 157 HTTP tests against a fresh Docker stack and
-the separate forced nested-insert rollback check; see `docs/testing.md` for exact
-evidence and limits. That baseline run does not cover this increment; check
-GitHub Actions for the commit introducing it before claiming CI verification.
+results/logs. The [main run for baseline commit `f27cfd5`](https://github.com/Awesomegardener/ECE30861_Phase_3/actions/runs/39157992256)
+was verified successful. The deployment-readiness increment passes **291 local
+tests**, including 157 HTTP tests against a fresh Docker stack, plus real
+concurrent schema initialization, container PORT, DB-outage/recovery, restart
+persistence, graceful-shutdown and nested-insert rollback checks. See
+`docs/testing.md` for counts, commands, evidence and limits. The updated workflow
+runs those Docker checks too, but has not run on GitHub for this uncommitted
+increment; the baseline run does not cover it.
 The workflow captures synthetic HTTP bodies and the checkout SHA. Merge blocking
 depends on branch protection; both branches were reported unprotected during an
 earlier review, and that setting was not changed here.
@@ -123,6 +131,7 @@ are checked against shared OpenAPI 3.1 schemas, including date formats.
 - [AC mapping, operation status and delivery tasks](docs/phase3_status.md)
 - [Open pod decisions](docs/decisions.md)
 - [Implemented architecture and data model](docs/models.md)
+- [Google Cloud Console deployment guide](docs/deployment-google-cloud.md)
 
 The unchanged shared fixture establishes the 25-component success case. The
 implementation accepts CycloneDX 1.4/1.5/1.6, validates the whole document and
@@ -142,5 +151,8 @@ contract envelope, expected status and meaningful nonempty reason.
 
 Google Cloud Run plus Cloud SQL PostgreSQL is the selected hosting plan, using
 `main`. No remote deployment URL, cloud resources, registry update or two-way Team 6
-result is verified. Cloud startup/health configuration, spending and deployment
-still require review/authorization and coordinated testing.
+result is verified. PORT, startup and health improvements are verified locally.
+The Console guide covers Cloud SQL sockets, secrets, IAM, costs, probes, hosted
+verification and rollback. Root `cloudbuild.yaml` builds/publishes an image only
+when run by an authorized operator; it does not deploy. Cloud configuration,
+spending and deployment still require approval and coordinated testing.

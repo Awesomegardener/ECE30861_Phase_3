@@ -75,3 +75,45 @@ occurrence policies is explicit in `decisions.md`.
 The Phase 2 design proposed Dependency-Track and more state entities; this model
 removes them from the implemented view rather than implying they are running.
 Models were checked against `main.py`, its SQL, and Docker Compose configuration.
+
+## Startup and health in the deployment-readiness increment
+
+```mermaid
+flowchart TD
+    C[Container start: PORT or 8080] --> F[FastAPI lifespan: bounded DB retry]
+    F --> L[Transaction advisory lock 30861003]
+    L --> S[Create absent tables; inspect existing string types]
+    S --> M[Widen legacy strings only when needed]
+    M --> T[Commit and release lock]
+    T --> H[Serve HTTP]
+    S -->|Unexpected type or SQL failure| R[Rollback and release lock]
+    R -->|Transient failure within budget| F
+    R -->|Schema error or exhausted budget| X[Fail startup]
+    H --> LIVE[GET /health/live: process only]
+    H --> READY[GET /health/ready: read-only SELECT 1]
+```
+
+The initialization lock coordinates new instances/revisions using the same lock;
+it does not replace release-row locks used during SBOM replacement. Health routes
+are operational endpoints outside the shared `/api/v1` contract and excluded from
+generated OpenAPI. Readiness failure returns generic 503; liveness does not depend
+on PostgreSQL. Neither endpoint alters the test clock or persisted application data.
+
+## Planned Google Cloud deployment (not deployed or verified remotely)
+
+```mermaid
+flowchart LR
+    GH[Reviewed main SHA] --> B[Manual Cloud Build: cloudbuild.yaml]
+    B --> AR[Artifact Registry: SHA tag and digest]
+    AR -->|Authorized manual deployment| CR[Cloud Run: PORT 8080]
+    U[Pod HTTPS test runner] --> CR
+    SM[Secret Manager: pinned DATABASE_URL version] --> CR
+    CR -->|Cloud SQL attachment: authenticated encrypted proxy| PG[(Cloud SQL PostgreSQL)]
+    CR --> CL[Cloud Logging]
+```
+
+The runtime account has Cloud SQL Client and secret-specific Accessor. The build
+account has separate source/image/log permissions and no DB credentials. No Cloud
+Run filesystem persistence is required; PostgreSQL stores releases, components
+and clock state. These are proposed cloud resources, not a claim that they exist.
+See [the Console guide](deployment-google-cloud.md) for deployment settings and gates.

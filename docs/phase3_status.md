@@ -1,16 +1,17 @@
 # Phase 3 status
 
-Committed baseline `0c067d85d7977a32409fa3f552a225424a0b83c1` on `main` has a
-[successful GitHub Actions run](https://github.com/Awesomegardener/ECE30861_Phase_3/actions/runs/39087275607),
-confirmed on 2026-10-18. That run verifies the baseline. CI for the commit
-introducing the policy/normalization changes must be checked separately.
+Committed baseline `f27cfd5a901637525a0bf4dc9dce856fc1fd9903` on `main` has a
+[successful GitHub Actions run](https://github.com/Awesomegardener/ECE30861_Phase_3/actions/runs/39157992256),
+confirmed on 2026-10-18. That run includes the policy/normalization increment.
+Current deployment-readiness edits are uncommitted and have no new GitHub CI run.
 No public hosted availability or
 cross-team execution is implied by either CI or local tests.
 
-The current supplied-policy increment passed **264 local tests**, comprising
-157 HTTP checks against a newly built Docker API/PostgreSQL stack and 107 local
-tests (51 SBOM, 42 clock, 10 evidence, 4 startup). The isolated project is
-`cra-phase3-pod-decisions-20261018`, port 18082. Its report evidence contains
+The previous supplied-policy increment passed **264 local tests** on port 18082.
+The current deployment-readiness increment passed **291 local tests**: 157 HTTP
+checks against a new Docker API/PostgreSQL stack and 134 local tests (51 SBOM,
+42 clock, 10 evidence, 15 startup, 8 health, 8 deployment-helper checks). Project
+`cra-phase3-deployment-20261018` uses port 18083. Its HTTP report evidence contains
 918 HTTP exchanges with UTC timestamps, captured bodies and base-SHA/dirty-source
 provenance. A forced final nested INSERT failure preserves 25 prior components
 and leaves no idle transactions. Details are in `testing.md`.
@@ -74,6 +75,21 @@ resolve the separate literal-`Z` policy or undocumented clock-error response.
 The existing datetime representation still cannot represent leap-second instants;
 this increment adds no new conversion policy for them.
 
+## Deployment-readiness verification
+
+| Item | Local evidence | GitHub / hosted status |
+|---|---|---|
+| Cloud Run PORT / signals | Same Dockerfile/image passes default 8080, override 9090, invalid-port rejection and graceful SIGTERM exit | Updated CI includes the check; not run on GitHub yet; Cloud Run unverified |
+| Concurrent initialization | Six independent SQL connections initialize an empty schema concurrently; legacy VARCHAR upgrade preserves rows/timestamps; repeat TEXT startup avoids exclusive ALTER locks | Run in new local PostgreSQL test databases; no Cloud SQL instance exists |
+| Retry, timeout and cleanup | Unit retries/deadlines/config rejection plus real advisory-lock timeout/recovery and incompatible-schema DDL rollback | New CI invokes `check_startup_schema.py`; cloud IAM/latency remain unverified |
+| Health | Unit success/failure cases plus real HTTP ready 200/503 during DB stop/recovery, live 200 throughout; read-only UTC/timeouts checked | Probe configuration documented, not deployed |
+| Persistence and local preservation | Synthetic release/inventory survives isolated API/DB restarts; original resources and database fingerprints match | Hosted restart verification remains required |
+| Build and operations | Build-only `cloudbuild.yaml`; Console guide for socket DSN, secrets/IAM, cost, probes, verification and rollback | No Cloud Build trigger/build, image publication or resource creation executed |
+
+See [the deployment guide](deployment-google-cloud.md) and
+[executed test details](testing.md#google-cloud-deployment-readiness). Health
+routes add no shared-contract operations or Phase 4/5 functionality.
+
 ## Limitations and remaining delivery work
 
 | ID | Severity | Limitation / workaround | Next action |
@@ -82,7 +98,7 @@ this increment adds no new conversion policy for them.
 | LIM-02 | Medium | Version range and required descendant versions follow the supplied Team 2 acceptance. Metadata-only/absent-array input policy is still unspecified; existing behavior is retained. Old top-level records cannot recover omitted children without the original SBOM. | Retain final shared policy record; clarify absent-array behavior; coordinate any resubmission without resetting existing data |
 | LIM-03 | Medium | Product/version nonempty prose conflicts with YAML; timestamp/error/reset details are incomplete. | Reconcile documents without unilateral API changes |
 | LIM-04 | High for delivery | No verified network host, registry entry or cross-team execution. Local Docker and hosted CI evidence only. | Obtain hosting approval, deploy, record SHA/platform/availability and update registry |
-| LIM-05 | Medium | Baseline `0c067d8` has verified successful main CI. The policy increment has local verification recorded below; check CI for its released SHA separately. Branches were reported unprotected during earlier review; that setting was not rechecked or changed here. | Retain CI evidence for the new released SHA; user has authorized saving the reviewed increment to main |
+| LIM-05 | Medium | Baseline `f27cfd5` has verified successful main CI, including the policy increment. Current deployment-readiness edits are locally verified but uncommitted. Branch protection was not changed. | Obtain commit/push approval for these edits and retain their own CI result |
 | LIM-06 | Medium for reporting | No measured server code coverage or recorded human AC-03 review. HTTP evidence is available for that review. | Coordinate server coverage and human review; do not confuse runner coverage with service coverage |
 
 Phase 4 remains REQ-03–06 / AC-04–07, including vulnerability fixture control.
@@ -100,13 +116,14 @@ No teammate activity, hosting result, or pod decision has been invented here.
 
 - [x] Implement and locally verify recursive inventory normalization and supplied 1.4/1.5/1.6 policy.
 - [ ] Obtain final Team 6 acknowledgement of the remaining proposals and exact error-code mappings; resolve input/reset questions.
-- [x] Retain successful main CI URL for committed baseline `0c067d8`.
-- [x] Obtain teammate review and user authorization to commit/push this increment to `main`.
-- [ ] Verify the increment's own CI run for its released SHA.
+- [x] Retain successful main CI URL for committed policy baseline `f27cfd5`.
+- [x] Implement PORT, concurrent-safe schema setup, bounded startup and minimal health routes; locally test them.
+- [x] Add the Google Cloud Console guide and build-only configuration; update CI with isolated deployment checks.
+- [ ] Review/approve committing and pushing the deployment-readiness increment; verify its own CI run.
 - [x] Select Google Cloud Run and Cloud SQL PostgreSQL, using deployment branch `main`.
-- [ ] Approve Google Cloud project, budget, region, availability and service ownership, plus proposed startup/health changes.
+- [ ] Approve Google Cloud project, budget, region, availability, public test access and service ownership.
 - [ ] Create a separate hosted test database with authenticated encrypted connectivity and new Secret Manager credentials; block direct public database access and preserve local databases.
-- [ ] Configure the API port, database-aware readiness, persistent storage, backups/recovery and timestamped logs.
+- [ ] Apply/verify hosted API port/probes, SQL attachment, secrets/runtime identity, persistent storage, backups and logs.
 - [ ] Deploy an approved SHA/image over HTTPS; record runtime, region, release procedure and restrictions.
 - [ ] Run the complete HTTP suite against that hosted test service and retain target-specific evidence, JUnit results and normal-restart snapshots.
 - [ ] Review representative AC-03 errors with a teammate and record the human review.

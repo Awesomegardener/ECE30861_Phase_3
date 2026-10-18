@@ -8,6 +8,8 @@ permissions:
 jobs:
   phase3:
     runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROJECT_NAME: cra-phase3-deployment-ci
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -23,10 +25,13 @@ jobs:
           python -m mypy
           python scripts/check_contract.py
       - name: Start isolated PostgreSQL/API stack
-        run: docker compose -f cra-service/docker-compose.test.yml up --build -d --wait --wait-timeout 90
+        run: docker compose -f cra-service/docker-compose.test.yml up --build -d --wait --wait-timeout 240
       - name: Acceptance and startup tests
         run: |
+          set -euo pipefail
           python -m pytest cra-service --allow-reset --base-url http://127.0.0.1:18080 --capture-http-bodies --tested-commit "$GITHUB_SHA" --junitxml=artifacts/results.xml
+          docker compose -f cra-service/docker-compose.test.yml exec -T api python - < scripts/check_startup_schema.py | tee artifacts/schema-startup.json
+          python scripts/check_deployment_runtime.py --project "$COMPOSE_PROJECT_NAME" --evidence-dir artifacts
           docker compose -f cra-service/docker-compose.test.yml exec -T api python - < scripts/check_local_rollback.py
           python scripts/check_contract.py
       - name: Capture service logs

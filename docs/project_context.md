@@ -10,11 +10,11 @@ branch/commit and dirty state before making changes.
 
 ## 0. Current implementation and supplied policy exchange
 
-- Local branch `main`, base commit `0c067d85d7977a32409fa3f552a225424a0b83c1`.
-  [GitHub Actions on that main commit](https://github.com/Awesomegardener/ECE30861_Phase_3/actions/runs/39087275607)
-  was checked and is successful. The following policy changes were tested as
-  working-tree changes before saving, so that baseline CI run does not verify
-  them. Check CI for the commit introducing this increment.
+- Local branch `main`, base commit `f27cfd5a901637525a0bf4dc9dce856fc1fd9903`.
+  [GitHub Actions on that main commit](https://github.com/Awesomegardener/ECE30861_Phase_3/actions/runs/39157992256)
+  was checked and is successful, including the saved policy/normalization changes.
+  The current deployment-readiness changes are uncommitted and locally verified;
+  they have no GitHub CI run yet. No commit/push/deployment is authorized this turn.
 - The original shared contract is present at `docs/openapi.yaml`; shared Team 6
   fixtures are present under `fixtures/`. Neither is modified. Source precedence
   remains OpenAPI, Phase 2 specification, assignment, then implementation.
@@ -33,17 +33,25 @@ branch/commit and dirty state before making changes.
 - CycloneDX `uniqueItems` still rejects identical siblings. Valid repeats across
   branches or with distinct identifiers are preserved. Relaxing schema validity
   for duplicates would need contract reconciliation; it is not implemented.
-- Fresh isolated Docker verification on port 18082: baseline **153 passed**;
-  expanded suite **264 passed** (157 HTTP, 107 local), no failures/skips.
-  Forced final nested SQL INSERT failure preserves 25 old rows and leaves no
-  idle transactions. Detailed evidence and preservation checks are in `testing.md`.
+- Previous policy verification on port 18082 passed 264 tests. Current fresh
+  deployment test project `cra-phase3-deployment-20261018`, port 18083, passes
+  **291 tests** (157 HTTP, 134 local), no failures/skips. Six concurrent schema
+  initializers, legacy upgrade preservation, lock timeout/recovery, DDL rollback,
+  custom/default ports, health during DB outage, API/DB restart persistence,
+  graceful shutdown and nested-insert rollback checks pass separately.
+  See `testing.md` for actual evidence, the corrected test-helper timing failure
+  and original-resource preservation checks.
 - Google Cloud Run plus Cloud SQL PostgreSQL, deploying approved `main` source,
   is the selected hosting plan. No cloud configuration/resources or deployment
-  were created. Cloud-specific startup/health/PORT recommendations still need
-  review and implementation authorization. Keep both local Compose files.
-- The user reports teammate review/approval and has authorized committing/pushing
-  this increment directly to `main`. No Phase 4/5 functionality, shared-contract
-  revision or deployment is included. Peer-team coordination is with Team 6.
+  were created. Cloud-specific PORT support, bounded startup/transaction advisory
+  locking and `/health/live`/`/health/ready` are implemented/tested locally. Both
+  Compose files remain byte-for-byte unchanged. `deployment-google-cloud.md`
+  supplies Console setup, socket DSN/secrets/IAM, low-cost settings, verification
+  and rollback. `cloudbuild.yaml` is build-only and has not run on Google Cloud.
+- The previous policy increment was reviewed, saved to main and passed CI. The
+  user authorizes only deployment-readiness edits/tests now: no commit, push,
+  cloud resource creation or deployment. No Phase 4/5 functionality or shared
+  contract revision is included. Peer-team coordination remains with Team 6.
 
 ## 1. Product and regulatory context
 The EU **Cyber Resilience Act** (Regulation (EU) 2024/2847) imposes cybersecurity and vulnerability-management duties for products with digital elements. The selected project assists manufacturer product security engineers and compliance staff. The pod combined two Phase 1 ideas: release-indexed Software Bill of Materials (SBOM) inventory/vulnerability lookup and internal incident/report-deadline tracking. Its purpose is to track which supported shipped releases contain vulnerable software components and preserve evidence needed for reporting; **humans decide whether an issue is legally reportable, approve and submit regulatory reports, and perform remediation**.
@@ -156,12 +164,13 @@ The Phase 3 assignment asks for:
 The phase also requires the class deployment registry entry to identify **both web service and automated test runner**. Do not invent a deployment or cross-team test result in the report.
 
 ## 8. Remaining work after this increment
-1. Save the reviewed policy implementation under the user's explicit commit/push
-   authorization, then check CI for the resulting SHA and retain its evidence.
+1. Review the uncommitted deployment-readiness changes; obtain commit/push
+   authorization, then verify the resulting SHA's CI. Baseline f27cfd5 CI passes.
 2. Obtain Team 6 acknowledgement of the outstanding proposals in `decisions.md`;
    reconcile any shared-contract changes through the pod before editing YAML.
-3. Review the Google Cloud plan, project/billing/region and startup/health changes.
-   Deploy only after explicit authorization, using a separate course-test database.
+3. Follow `deployment-google-cloud.md` after project/billing/region/IAM review and
+   explicit cloud spending/deployment authorization, using a new synthetic course
+   database. Local readiness tests do not establish actual Cloud SQL connectivity.
 4. Run the HTTP suite against the deployed URL with coordinated reset permission;
    record source SHA, image/revision, persistence, logs and both testing directions.
 5. Update the class registry, implemented models and Phase 3 report with factual
