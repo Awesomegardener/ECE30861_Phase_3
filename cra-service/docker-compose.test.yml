@@ -1,0 +1,35 @@
+name: cra-phase3-tests
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: cra_test
+      POSTGRES_PASSWORD: local_test_only
+      POSTGRES_DB: cra_test
+    volumes:
+      - pgdata_test:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cra_test -d cra_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build: .
+    ports:
+      - "127.0.0.1:${TEST_API_PORT:-18080}:8080"
+    environment:
+      DATABASE_URL: postgresql://cra_test:local_test_only@db:5432/cra_test
+      DB_STARTUP_ATTEMPTS: "30"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,urllib.request,psycopg2; urllib.request.urlopen('http://127.0.0.1:8080/openapi.json', timeout=3).close(); c=psycopg2.connect(os.environ['DATABASE_URL'],connect_timeout=3); c.close()"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  pgdata_test:

@@ -1,18 +1,21 @@
-version: "3.8"
-
 services:
   db:
     image: postgres:16-alpine
     container_name: cra_postgres
     restart: always
     environment:
-      POSTGRES_USER: cra_user
-      POSTGRES_PASSWORD: cra_password
-      POSTGRES_DB: cra_db
+      POSTGRES_USER: ${POSTGRES_USER:-cra_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in cra-service/.env}
+      POSTGRES_DB: ${POSTGRES_DB:-cra_db}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
 
   api:
     build: .
@@ -21,9 +24,16 @@ services:
     ports:
       - "8080:8080"
     environment:
-      DATABASE_URL: postgresql://cra_user:cra_password@db:5432/cra_db
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-cra_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-cra_db}}
+      DB_STARTUP_ATTEMPTS: ${DB_STARTUP_ATTEMPTS:-30}
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,urllib.request,psycopg2; urllib.request.urlopen('http://127.0.0.1:8080/openapi.json', timeout=3).close(); c=psycopg2.connect(os.environ['DATABASE_URL'],connect_timeout=3); c.close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   pgdata:
