@@ -1,5 +1,6 @@
 """Validate authoritative inputs and emit observations for every shared operation."""
 
+import argparse
 import ast
 import hashlib
 import json
@@ -14,6 +15,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--evidence-dir", type=Path, default=ROOT / "artifacts")
+    args = parser.parse_args()
     spec = yaml.safe_load((ROOT / "docs/openapi.yaml").read_text(encoding="utf-8"))
     validate_spec(spec)
     sys.path.insert(0, str(ROOT / "cra-service"))
@@ -41,8 +45,8 @@ def main():
                 and decorator.func.attr in methods
             ):
                 implemented.add((decorator.func.attr, decorator.args[0].value))
-    artifact_dir = ROOT / "artifacts"
-    artifact_dir.mkdir(exist_ok=True)
+    artifact_dir = args.evidence_dir
+    artifact_dir.mkdir(parents=True, exist_ok=True)
     observations_file = artifact_dir / "operation-observations.json"
     observations = json.loads(observations_file.read_text()) if observations_file.exists() else []
     status = []

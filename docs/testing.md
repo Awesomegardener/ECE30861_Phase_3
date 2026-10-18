@@ -1,5 +1,9 @@
 # Phase 3 verification record
 
+This is a chronological record. Statements about uncommitted code or missing CI
+in earlier entries describe that stage; current CI and clock/evidence results are
+recorded at the end. Public deployment and cross-team tests remain unverified.
+
 ## Baseline — 2026-10-17
 
 - Repository base: `99147b3bf9e2f1c02f54bd017a126b66e776fef3`.
@@ -120,3 +124,114 @@ Subsequent stage results are appended after actual execution.
 - No remote deployment, class registry update, cross-team execution, commit or
   push occurred. Open pod decisions and Phase 3 delivery gaps remain in
   `decisions.md` / `phase3_status.md`; Phase 4/5 features remain absent.
+
+## Verified GitHub Actions run
+
+- Branch: `phase3-improvements`; commit: `2a95313d524e07072bead8eff0b6ea3035e2ecf8`.
+- [Run 39082032962](https://github.com/Awesomegardener/ECE30861_Phase_3/actions/runs/39082032962)
+  completed successfully on 2026-10-18 at approximately 00:15 UTC.
+- Job logs were inspected: **67 passed in 6.72 seconds**, on Linux/Python 3.11.17.
+  Ruff, formatting, mypy, shared OpenAPI/fixture validation, Docker startup and
+  the forced-insert SQL rollback check passed.
+- The `phase3-results` artifact was uploaded. This is CI-stack verification, not
+  public deployed-service verification. The workflow did not deploy the service.
+- GitHub reported `main` and `phase3-improvements` as unprotected during review.
+  No branch protection, merge or deployment settings were changed.
+
+## Clock validation and HTTP evidence increment
+
+At the time of this local verification, the following changes were uncommitted
+work based on `2a95313`. They are not covered by the initial hosted run above;
+later commits require their own CI run evidence.
+
+- Added an RFC 3339 syntax gate before the existing aware-datetime/calendar
+  parser. Numeric strings, space/underscore separators, missing seconds,
+  malformed offsets, invalid calendars/times and surrounding whitespace are
+  rejected with the existing 400 `INVALID_REQUEST` response. No shared error
+  status or literal-`Z` policy was changed.
+- Valid numeric offsets (including non-hour offsets), uppercase/lowercase
+  `T`/`Z`, fractional seconds, UTC date rollover and leap-day inputs are tested.
+  Existing Python/PostgreSQL microsecond precision and datetime representation
+  limits remain unchanged. Leap-second timestamps remain unsupported by the
+  existing datetime parser; no new conversion semantics were introduced.
+- First focused run: 45 passed, 1 failed because the optional JSON-schema format
+  checker accepts a final LF. Corrected that test-oracle assumption; explicit
+  trailing-newline rejection remains covered. The focused clock/startup run then
+  passed **46 tests**. Clock/evidence/startup checks then passed **53 tests**.
+- Full run against a newly created Docker project, `cra-phase3-clock-evidence`,
+  API `http://127.0.0.1:18081`: **153 passed, 0 failed, 0 skipped**, 15.28 seconds.
+  Counts: 100 HTTP, 42 clock-model, 7 evidence and 4 startup tests.
+- The full Windows/Python 3.12 runner reported three warnings: the existing
+  dateutil deprecation and two pytest-cache permission warnings. They did not
+  fail tests; the Docker API uses Python 3.11.
+- Ruff lint/format checks passed across 10 Python files; mypy passed on both
+  service modules. Shared OpenAPI 3.1 validation and all 25 fixture/lock-file
+  pairs passed. Shared inputs and SBOM normalization remain unchanged.
+- The internal rollback check passed in the fresh stack: forced final INSERT
+  failure, 25 previous components retained, JSON 500, no idle transactions.
+- Evidence: `artifacts/clock-evidence/results.xml`, `sql-rollback.txt`,
+  `compose.log`, `docker-provenance.json`, operation status and input hashes.
+  The HTTP bundle is
+  `http-evidence-20261018T004450978497Z-e01764c9.json` in that directory.
+  It contains **519 exchanges**, including 27 AC-03 rejection examples and both
+  concurrent replacement uploads. No captured body was truncated. An explicit
+  check found no local private database password in the bundle.
+- The fresh API image's runtime `main.py`, `sbom_validation.py` and requirements
+  hashes match the tested working files; image/source provenance is saved with
+  the evidence. The supplied SHA identifies the base commit, not a claim that
+  these uncommitted changes already exist in GitHub.
+- Existing databases were fingerprinted before testing. No test request targeted
+  ports 8080 or 18080; the full suite reset only the newly created test database.
+  Final comparison passed: all four existing container IDs/images/mounts and
+  both databases' row counts/hashes match their before-test snapshots. The
+  application retains 1 release / 0 components / 0 clock rows; the older test
+  database retains 2 / 25 / 0. Snapshots are
+  `artifacts/clock-evidence-preservation-before.json` and `...-after.json`.
+- The fresh test API/database containers were stopped after verification; their
+  named volume and test data were retained. The four pre-existing containers
+  remain healthy. No application refresh, remote deployment, commit or push was
+  performed for this increment.
+
+### Capture and interpret evidence
+
+Add these options to a coordinated HTTP test run:
+
+```powershell
+.\.venv\Scripts\python.exe -B -m pytest cra-service/test_api.py --base-url http://127.0.0.1:18081 --allow-reset --capture-http-bodies --tested-commit 2a95313d524e07072bead8eff0b6ea3035e2ecf8 --evidence-dir artifacts/report-run --junitxml=artifacts/report-run/results.xml
+.\.venv\Scripts\python.exe -B scripts/check_contract.py --evidence-dir artifacts/report-run
+```
+
+The HTTP target must be an isolated/coordinated test service. For a remote
+service, substitute its actual deployed full SHA (or `TESTED_COMMIT_SHA`) rather
+than the runner's checkout SHA. Omit the option if unknown. Target SHA is
+operator-supplied; the runner does not verify deployment provenance. For an
+uncommitted local image, retain the image/source hashes alongside the base SHA.
+
+Each run creates a unique `http-evidence-<UTC>-<id>.json`. The bundle includes:
+
+- `run`: target base URL, supplied target SHA or null, version provenance,
+  runner commit/dirty state/source hashes, shared-input hashes and start/end UTC.
+- `exchanges`: pytest test ID, method, contract path, actual request URL, status,
+  duration, UTC request/response times, documented-status flag and schema result.
+- Opt-in request/response bodies, preserving JSON, malformed text, and empty 204
+  responses. `--evidence-body-limit` defaults to 65,536 characters per body;
+  oversized values are explicitly marked truncated and retain byte count/hash.
+- Only content type, test user ID and request ID headers are retained. URL user
+  credentials/query values and common sensitive JSON keys are redacted. Capture
+  only synthetic fixtures and review artifacts before publication; redaction
+  cannot identify arbitrary confidential free text.
+
+Bodies are off by default. Failed response-schema checks and transport failures
+are retained, and session teardown writes evidence even when tests fail.
+Concurrent uploads use separate HTTP sessions and are also recorded.
+`operation-observations.json` is overwritten as a latest-run convenience; unique
+bundles retain earlier runs. Use separate evidence directories per target/run and
+pass the same directory to the contract-report script.
+
+Pair bundles with JUnit: `schema_validation=passed` does not prove all business
+assertions passed, and `documented=false` still identifies the shared clock
+operation's missing 400 response. These files do not establish human AC-03
+review, server code coverage, public availability or cross-team completion.
+
+RFC syntax reference used for this fix:
+https://www.rfc-editor.org/rfc/rfc3339.html#section-5.6.

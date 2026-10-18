@@ -9,11 +9,76 @@ from pathlib import Path
 import pytest
 import requests
 import yaml
+from http_evidence import HttpEvidence, utc_now
 from jsonschema import Draft202012Validator, FormatChecker
 from referencing import Registry
 from referencing.jsonschema import DRAFT202012
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture(
+    params=[
+        None,
+        True,
+        1793491200,
+        1793491200.5,
+        [],
+        {},
+        "",
+        "invalid",
+        "1793491200",
+        "1793491200000",
+        "-1",
+        "2026-11-01",
+        "2026-11-01T12:00:00",
+        "2026-11-01 12:00:00Z",
+        "2026-11-01_12:00:00Z",
+        "2026-11-01T12:00Z",
+        "2026-11-01T12:00:00+0200",
+        "2026-11-01T12:00:00+02",
+        "2026-11-01T12:00:00+24:00",
+        "2026-11-01T12:00:00+00:60",
+        "2026-11-01T24:00:00Z",
+        "2026-11-01T12:60:00Z",
+        "2026-11-01T12:00:61Z",
+        "2026-02-30T12:00:00Z",
+        "2026-13-01T12:00:00Z",
+        "2026-11-01T12:00:00,5Z",
+        "2026-11-01T12:00:00.Z",
+        " 2026-11-01T12:00:00Z",
+        "2026-11-01T12:00:00Z\n",
+    ]
+)
+def invalid_clock_input(request):
+    return request.param
+
+
+@pytest.fixture(
+    params=[
+        ("2026-11-01T23:59:59Z", "2026-11-01T23:59:59Z"),
+        ("2026-11-01t23:59:59z", "2026-11-01T23:59:59Z"),
+        ("2026-11-01T23:59:59+00:00", "2026-11-01T23:59:59Z"),
+        ("2026-11-01T23:59:59-00:00", "2026-11-01T23:59:59Z"),
+        ("2026-11-02T01:00:00+02:00", "2026-11-01T23:00:00Z"),
+        ("2026-11-01T20:30:00-05:30", "2026-11-02T02:00:00Z"),
+        ("2026-11-02T01:15:00+05:45", "2026-11-01T19:30:00Z"),
+        ("2026-11-01T12:00:00+23:59", "2026-10-31T12:01:00Z"),
+        ("2026-11-01T12:00:00-23:59", "2026-11-02T11:59:00Z"),
+        ("2026-11-01T23:59:59.1Z", "2026-11-01T23:59:59.100000Z"),
+        ("2026-11-01T23:59:59.123456+02:00", "2026-11-01T21:59:59.123456Z"),
+        ("2026-11-01T23:59:59.123456789Z", "2026-11-01T23:59:59.123456Z"),
+        ("2028-02-29T23:59:59Z", "2028-02-29T23:59:59Z"),
+    ],
+    ids=lambda case: case[0],
+)
+def valid_clock_case(request):
+    return request.param
+
+
+@pytest.fixture(scope="session")
+def contract():
+    return yaml.safe_load((ROOT / "docs/openapi.yaml").read_text(encoding="utf-8"))
 
 
 def pytest_addoption(parser):
@@ -23,6 +88,20 @@ def pytest_addoption(parser):
         action="store_true",
         help="Allow destructive reset on the selected coordinated target",
     )
+    parser.addoption("--evidence-dir", type=Path, default=ROOT / "artifacts")
+    parser.addoption(
+        "--capture-http-bodies",
+        action="store_true",
+        help="Save redacted, bounded request/response bodies from synthetic test data",
+    )
+    parser.addoption("--tested-commit", default=os.getenv("TESTED_COMMIT_SHA"))
+    parser.addoption("--evidence-body-limit", type=int, default=65536)
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    path = getattr(config, "http_evidence_path", None)
+    if path:
+        terminalreporter.write_line(f"HTTP report evidence: {path}")
 
 
 @pytest.fixture(scope="session")
@@ -36,7 +115,7 @@ def shared_sbom():
 
 
 class Api:
-    def __init__(self, base_url, spec):
+    def __init__(self, base_url, spec, evidence):
         self.base_url = base_url.rstrip("/")
         if not self.base_url.endswith("/api/v1"):
             self.base_url += "/api/v1"
@@ -46,29 +125,58 @@ class Api:
         self.registry = Registry().with_resource(
             "urn:cra:contract", DRAFT202012.create_resource(spec)
         )
-        self.observations = []
+        self.evidence = evidence
+        self.test_id = None
 
-    def request(self, method, path, *, undocumented=False, **kwargs):
+    def request(self, method, path, *, undocumented=False, session=None, **kwargs):
         start = time.monotonic()
-        response = self.session.request(method, self.base_url + path, timeout=10, **kwargs)
+        requested_at = utc_now()
         route = next(
             route
             for route in self.spec["paths"]
             if re.fullmatch(re.sub(r"\{[^}]+\}", "[^/]+", route), "/api/v1" + path)
         )
         operation = self.spec["paths"][route][method.lower()]
+        observation = {
+            "test_id": self.test_id,
+            "method": method.upper(),
+            "path": route,
+            "requested_at_utc": requested_at,
+            "status": None,
+            "documented": None,
+            "schema_validation": "not_checked",
+        }
+        url = self.base_url + path
+        try:
+            response = (session or self.session).request(method, url, timeout=10, **kwargs)
+        except requests.RequestException as exc:
+            observation.update(
+                request_error=type(exc).__name__,
+                failed_at_utc=utc_now(),
+                seconds=round(time.monotonic() - start, 4),
+            )
+            self.evidence.record(observation, prepared=exc.request, url=url)
+            raise
         code = str(response.status_code)
-        self.observations.append(
-            {
-                "method": method,
-                "path": route,
-                "status": response.status_code,
-                "seconds": round(time.monotonic() - start, 4),
-                "documented": code in operation["responses"],
-            }
+        observation.update(
+            status=response.status_code,
+            documented=code in operation["responses"],
+            received_at_utc=utc_now(),
+            seconds=round(time.monotonic() - start, 4),
         )
+        try:
+            self.validate_response(response, route, method, operation, code, undocumented)
+            observation["schema_validation"] = "passed"
+        except Exception as exc:
+            observation.update(schema_validation="failed", validation_error=type(exc).__name__)
+            raise
+        finally:
+            self.evidence.record(observation, response=response)
+        return response
+
+    def validate_response(self, response, route, method, operation, code, undocumented):
         if code not in operation["responses"]:
-            assert undocumented, (method, path, response.status_code, response.text)
+            assert undocumented, (method, route, response.status_code, response.text)
             assert route == "/api/v1/test/clock" and code == "400"
             Draft202012Validator(
                 {"$ref": "urn:cra:contract#/components/schemas/Error"}, registry=self.registry
@@ -82,7 +190,6 @@ class Api:
             Draft202012Validator(
                 {"$ref": ref}, registry=self.registry, format_checker=FormatChecker()
             ).validate(response.json())
-        return response
 
     def create(self, payload=None):
         payload = payload or {
@@ -101,24 +208,39 @@ class Api:
 
 
 @pytest.fixture(scope="session")
-def client(request):
+def client(request, contract):
     if not request.config.getoption("--allow-reset"):
         pytest.fail(
             "HTTP tests reset data. Select an isolated/coordinated --base-url and explicitly pass --allow-reset."
         )
-    spec = yaml.safe_load((ROOT / "docs/openapi.yaml").read_text(encoding="utf-8"))
-    api = Api(request.config.getoption("--base-url"), spec)
-    yield api
-    api.session.close()
-    artifact_dir = ROOT / "artifacts"
-    artifact_dir.mkdir(exist_ok=True)
-    (artifact_dir / "operation-observations.json").write_text(
-        json.dumps(api.observations, indent=2), encoding="utf-8"
+    limit = request.config.getoption("--evidence-body-limit")
+    if limit < 1:
+        raise pytest.UsageError("--evidence-body-limit must be positive")
+    commit = request.config.getoption("--tested-commit")
+    if commit is not None and not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", commit):
+        raise pytest.UsageError("--tested-commit must be the target's full Git SHA")
+    base_url = request.config.getoption("--base-url").rstrip("/")
+    if not base_url.endswith("/api/v1"):
+        base_url += "/api/v1"
+    evidence = HttpEvidence(
+        ROOT,
+        request.config.getoption("--evidence-dir"),
+        base_url,
+        capture_bodies=request.config.getoption("--capture-http-bodies"),
+        body_limit=limit,
+        tested_commit=commit,
     )
+    api = Api(base_url, contract, evidence)
+    try:
+        yield api
+    finally:
+        api.session.close()
+        request.config.http_evidence_path = evidence.write()
 
 
 @pytest.fixture
-def api(client, release_cases):
+def api(client, release_cases, request):
+    client.test_id = request.node.nodeid
     response = client.request("POST", "/test/reset")
     assert response.status_code == 204
     response = client.request("PUT", "/test/clock", json={"now": release_cases["reference_clock"]})

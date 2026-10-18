@@ -1,12 +1,18 @@
 # Phase 3 status
 
-No hosted availability, pod approval beyond the fixture README, or external CI
-result is implied by code presence. Actual local runs are in `testing.md`.
+Commit `2a95313d524e07072bead8eff0b6ea3035e2ecf8` on `phase3-improvements` passed
+[GitHub Actions](https://github.com/Awesomegardener/ECE30861_Phase_3/actions/runs/39082032962):
+67 tests, static checks, Docker startup and the SQL rollback check. The run
+completed on 2026-10-18 UTC. No public hosted availability or cross-team execution
+is implied by this CI result.
 
-The updated local service is healthy on port 8080. Its original PostgreSQL volume
-and row fingerprints are unchanged; port 18080 is a separate test stack. The
-final local suite passed 67 tests. This is local operational evidence, not a
-network-accessible hosted deployment or completed Phase 3 submission.
+The subsequent clock/evidence increment passed 153 local tests
+(100 HTTP and 53 local tests) against a fresh Docker test project on port 18081.
+Its report bundle contains 519 HTTP exchanges with timestamps, target/version
+provenance, and captured bodies. The original application on port 8080 and prior
+test stack on port 18080 were not refreshed or reset. Actual results and data
+preservation evidence are in `testing.md`. Hosted CI verification must be checked
+against the increment's own commit/run; the linked initial run only covers `2a95313`.
 
 ## Acceptance mapping
 
@@ -19,7 +25,8 @@ network-accessible hosted deployment or completed Phase 3 submission.
 Oracles come from unchanged shared release expectations, the SBOM's own component
 tuples, the matching source lock file and OpenAPI schemas/statuses. No live CVE
 service or AI-generated expected inventory is used. Error reasons have explicit
-automated assertions and remain available in response artifacts for human review.
+automated assertions and are now retained in opt-in HTTP response artifacts for
+human review. Capturing those artifacts does not constitute completed human review.
 
 ## Every shared operation
 
@@ -50,6 +57,14 @@ Paths have prefix `/api/v1`. “Observed” means local checks, not universal co
 semantics or hosted availability. Contract version remains 1.0.0; no shared
 contract or fixture changes were made.
 
+The clock syntax defect is fixed locally: numeric strings, missing seconds,
+invalid separators/offsets, invalid dates and surrounding whitespace are rejected.
+Valid offset inputs, lowercase `t`/`z`, fractions, UTC rollover and leap-day dates
+are tested. Existing microsecond datetime precision is unchanged. This does not
+resolve the separate literal-`Z` policy or undocumented clock-error response.
+The existing datetime representation still cannot represent leap-second instants;
+this increment adds no new conversion policy for them.
+
 ## Limitations and remaining delivery work
 
 | ID | Severity | Limitation / workaround | Next action |
@@ -57,8 +72,9 @@ contract or fixture changes were made.
 | LIM-01 | High | Nested inventory children are validated but not stored. Use the agreed flat fixture for current cross-tests. | Resolve normalization/counting with pod before claiming Phase 3 complete |
 | LIM-02 | Medium | Missing component version/array and supported-version policies are not fully specified. Existing rejection behavior remains. | Pod decision and matching tests |
 | LIM-03 | Medium | Product/version nonempty prose conflicts with YAML; timestamp/error/reset details are incomplete. | Reconcile documents without unilateral API changes |
-| LIM-04 | High for delivery | No verified network host, registry entry or cross-team execution. Local Docker evidence only. | Obtain hosting approval, deploy, record SHA/platform/availability and update registry |
-| LIM-05 | Medium | CI workflow is local source; no hosted run or branch-protection evidence. | Approved push, obtain CI URL, configure required checks if authorized |
+| LIM-04 | High for delivery | No verified network host, registry entry or cross-team execution. Local Docker and hosted CI evidence only. | Obtain hosting approval, deploy, record SHA/platform/availability and update registry |
+| LIM-05 | Medium | Initial commit has a verified CI pass; the clock/evidence increment has recorded local verification and needs its own hosted CI evidence. Branches were reported unprotected during review. | Retain the CI URL/results for the released SHA; configure required checks only if authorized |
+| LIM-06 | Medium for reporting | No measured server code coverage or recorded human AC-03 review. HTTP evidence is available for that review. | Coordinate server coverage and human review; do not confuse runner coverage with service coverage |
 
 Phase 4 remains REQ-03–06 / AC-04–07, including vulnerability fixture control.
 Phase 5 remains REQ-07–08 / AC-08–10. The Phase 3 parsing and delivery gaps above
@@ -70,6 +86,19 @@ failure owners, and one actual specification disagreement/resolution plan; inclu
 deployed logs/version evidence and the web-service/test-runner registry locations.
 Each teammate must supply their own factual GenAI-use and verification account.
 No teammate activity, hosting result, or pod decision has been invented here.
+
+## Remaining deployment and submission tasks
+
+- [ ] Agree on nested-component normalization and remaining input/reset policies with Team 6.
+- [ ] Retain the new CI URL and artifacts for the released clock/evidence commit.
+- [ ] Select and approve hosting, budget, region, availability and service ownership.
+- [ ] Create a separate hosted test database with private connectivity and new environment-managed credentials; preserve local databases.
+- [ ] Configure the API port, database-aware readiness, persistent storage, backups/recovery and timestamped logs.
+- [ ] Deploy an approved SHA/image over HTTPS; record runtime, region, release procedure and restrictions.
+- [ ] Run the complete HTTP suite against that hosted test service and retain target-specific evidence, JUnit results and normal-restart snapshots.
+- [ ] Review representative AC-03 errors with a teammate and record the human review.
+- [ ] Coordinate reset permission and run full suites in both directions with Team 6; record counts, failure owners and coverage limits.
+- [ ] Update the class registry with service and test-runner locations, then finish the Q1-Q9 report and rendered models.
 
 ## Technical sources actually used
 

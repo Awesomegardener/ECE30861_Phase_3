@@ -246,15 +246,20 @@ def test_sbom_replacement_is_idempotent(api, shared_sbom):
 
 def test_concurrent_replacements_do_not_merge(api, shared_sbom):
     release = api.create()
-    url = api.base_url + f"/releases/{release['release_id']}/sbom"
+    path = f"/releases/{release['release_id']}/sbom"
     payloads = [deepcopy(shared_sbom), deepcopy(shared_sbom)]
     payloads[0]["components"] = payloads[0]["components"][:10]
     payloads[1]["components"] = payloads[1]["components"][10:]
 
     def upload(document):
-        return requests.put(
-            url, json=document, headers={"X-User-Id": "concurrent-test"}, timeout=10
-        )
+        with requests.Session() as session:
+            return api.request(
+                "PUT",
+                path,
+                session=session,
+                json=document,
+                headers={"X-User-Id": "concurrent-test"},
+            )
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         responses = list(pool.map(upload, payloads))
@@ -263,20 +268,32 @@ def test_concurrent_replacements_do_not_merge(api, shared_sbom):
     assert result in [inventory(document["components"]) for document in payloads]
 
 
-@pytest.mark.parametrize("value", [None, 1793491200, "invalid", "2026-11-01T12:00:00"])
-def test_invalid_clock_preserves_reference(api, value):
-    response = api.request("PUT", "/test/clock", json={"now": value}, undocumented=True)
-    assert response.status_code == 400
-    release = api.create(
-        {"product": "ClockRouter", "version": "1", "support_end_date": "2026-10-31"}
+def test_invalid_clock_preserves_reference(api, invalid_clock_input):
+    response = api.request(
+        "PUT", "/test/clock", json={"now": invalid_clock_input}, undocumented=True
     )
-    assert release["support_status"] == "unsupported"
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "INVALID_REQUEST"
+    assert "now" in response.json()["error"]["message"]
+    for version, date, expected in [
+        ("past", "2026-10-31", "unsupported"),
+        ("boundary", "2026-11-01", "supported"),
+    ]:
+        release = api.create(
+            {"product": "ClockRouter", "version": version, "support_end_date": date}
+        )
+        assert release["support_status"] == expected
 
 
-def test_clock_offset_uses_utc_date(api):
-    response = api.request("PUT", "/test/clock", json={"now": "2026-11-02T01:00:00+02:00"})
-    assert response.json()["now"] == "2026-11-01T23:00:00Z"
-    release = api.create({"product": "UtcRouter", "version": "1", "support_end_date": "2026-11-01"})
+def test_clock_aware_input_uses_utc_date(api, valid_clock_case):
+    value, expected = valid_clock_case
+    response = api.request("PUT", "/test/clock", json={"now": value})
+    assert response.status_code == 200
+    assert response.json()["now"] == expected
+    # A local date may differ from UTC; support ends on the normalized UTC date.
+    release = api.create(
+        {"product": "UtcRouter", "version": "1", "support_end_date": expected[:10]}
+    )
     assert release["support_status"] == "supported"
 
 

@@ -35,8 +35,9 @@ different Compose project and named volume. From the repository root:
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r cra-service/requirements-dev.txt
 docker compose -f cra-service/docker-compose.test.yml up --build -d --wait
-.\.venv\Scripts\python.exe -B -m pytest cra-service --base-url http://127.0.0.1:18080 --allow-reset --junitxml=artifacts/results.xml
-.\.venv\Scripts\python.exe scripts/check_contract.py
+$testedCommit = (git rev-parse HEAD).Trim()
+.\.venv\Scripts\python.exe -B -m pytest cra-service --base-url http://127.0.0.1:18080 --allow-reset --capture-http-bodies --tested-commit $testedCommit --evidence-dir artifacts/local --junitxml=artifacts/local/results.xml
+.\.venv\Scripts\python.exe scripts/check_contract.py --evidence-dir artifacts/local
 ```
 
 For the internal SQL-failure regression check, run only inside the dedicated stack:
@@ -65,6 +66,30 @@ docker compose -f cra-service/docker-compose.test.yml down
 Normal tests consume the agreed SBOM unchanged; they do not regenerate it or
 contact vulnerability services.
 
+## Save Phase 3 report evidence
+
+Each HTTP run writes a separate `http-evidence-<UTC>-<id>.json` file. It records
+the target URL, operator-supplied target SHA, runner SHA/dirty state, source and
+shared-input hashes, UTC request/response times, test IDs, statuses, schema-check
+results, and request IDs. `--capture-http-bodies` includes bounded, redacted JSON
+or text bodies, including malformed input and rejected responses. Bodies are
+omitted by default; use synthetic fixtures and inspect evidence before sharing.
+
+For another team's service, pass its actual deployed full SHA with `--tested-commit`
+or `TESTED_COMMIT_SHA`; the runner cannot independently verify that deployment's
+version. If unknown, omit it and the evidence explicitly records an unknown target
+version. The local example above uses the checkout's HEAD; an uncommitted Docker
+build also needs its dirty-state/source hashes and image identifier, rather than
+being described as exactly that committed version. See [the evidence format and
+executed results](docs/testing.md#clock-validation-and-http-evidence-increment).
+
+Use a different `--evidence-dir artifacts/<target-and-run>` for each target.
+Individual evidence bundles are retained; `operation-observations.json` is a
+latest-run convenience. Pass the same directory to `scripts/check_contract.py`.
+The JUnit report records test outcomes; a passed response-schema check alone does
+not establish that every acceptance assertion passed. Human AC-03 review and
+deployed-service verification must be recorded separately.
+
 ## Static checks and CI
 
 ```powershell
@@ -74,9 +99,14 @@ contact vulnerability services.
 .\.venv\Scripts\python.exe scripts/check_contract.py
 ```
 
-GitHub Actions runs these checks and the Docker HTTP/startup suite on Python 3.11,
-then uploads results/logs. A hosted CI run requires a later approved push. Merge
-blocking also depends on branch protection, which has not been changed.
+GitHub Actions runs these checks and the Docker suite on Python 3.11, then uploads
+results/logs. The [verified successful run for commit `2a95313`](https://github.com/Awesomegardener/ECE30861_Phase_3/actions/runs/39082032962)
+passed 67 tests plus the SQL rollback check. The later clock/evidence changes have
+local verification recorded in `docs/testing.md`; that linked CI run predates
+them. Check GitHub Actions for the run associated with each later commit. The
+updated workflow also captures synthetic HTTP bodies and the checkout SHA. Merge
+blocking depends on branch protection; GitHub reported both branches unprotected
+during the readiness review.
 
 Ignored local `artifacts/` outputs include JUnit results, response observations,
 status JSON for all 17 contract operations, and protected-input hashes. Responses

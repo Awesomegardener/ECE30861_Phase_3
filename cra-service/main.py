@@ -191,8 +191,15 @@ class ClockUpdate(BaseModel):
     @field_validator("now", mode="before")
     @classmethod
     def validate_clock_string(cls, value):
-        if not isinstance(value, str):
-            raise ValueError("now must be a timezone-aware date-time string")
+        # OpenAPI date-time uses RFC 3339, not Pydantic's broader timestamp parser.
+        # Calendar validity is still checked by AwareDatetime after this syntax gate.
+        pattern = (
+            r"[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt]"
+            r"(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\.[0-9]+)?"
+            r"(?:[Zz]|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])"
+        )
+        if not isinstance(value, str) or not re.fullmatch(pattern, value):
+            raise ValueError("now must be an RFC 3339 date-time string with a timezone")
         return value
 
 
