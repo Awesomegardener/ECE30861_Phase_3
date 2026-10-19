@@ -1,14 +1,26 @@
 # Phase 3 status
 
-Committed baseline `f27cfd5a901637525a0bf4dc9dce856fc1fd9903` on `main` has a
-[successful GitHub Actions run](https://github.com/Awesomegardener/ECE30861_Phase_3/actions/runs/39157992256),
-confirmed on 2026-10-18. That run includes the policy/normalization increment.
-Current deployment-readiness edits are uncommitted and have no new GitHub CI run.
-No public hosted availability or
-cross-team execution is implied by either CI or local tests.
+Current checkout is `main` at `7686edf2bbc007ca11c4f284d7e547821488f562` plus an
+uncommitted release/reset race fix. Readiness/COPY changes are already saved.
+The earlier [policy baseline CI run](https://github.com/Awesomegardener/ECE30861_Phase_3/actions/runs/39157992256)
+was verified successful; that does not verify this new fix, which has no CI run.
+
+Saved public Google Cloud evidence for reported deployed SHA `7686edf` shows
+**156 passed / 1 failed**, not full hosted acceptance. Clock normalization passed;
+POST release returned 404. A reset between committed INSERT and follow-up lookup
+reproduces that response locally. The fix captures the created row and UTC clock
+inside its transaction, returning only after commit. An overlapping cloud reset
+is plausible but not confirmed without server logs. See
+[the investigation](testing.md#release-creation--concurrent-reset-investigation).
+
+Current local verification: **297 passed**, including 157 Docker HTTP checks and
+six new creation regressions. Two deterministic real HTTP/SQL reset interleavings
+and the existing forced SBOM rollback check pass. No remote rerun, commit, push or
+deployment of this fix occurred; original data/volumes and hosted evidence remain
+unchanged. Cross-team execution and current cloud metadata were not inspected.
 
 The previous supplied-policy increment passed **264 local tests** on port 18082.
-The current deployment-readiness increment passed **291 local tests**: 157 HTTP
+The previous deployment-readiness increment passed **291 local tests**: 157 HTTP
 checks against a new Docker API/PostgreSQL stack and 134 local tests (51 SBOM,
 42 clock, 10 evidence, 15 startup, 8 health, 8 deployment-helper checks). Project
 `cra-phase3-deployment-20261018` uses port 18083. Its HTTP report evidence contains
@@ -97,8 +109,8 @@ routes add no shared-contract operations or Phase 4/5 functionality.
 | LIM-01 | Medium for cross-team readiness | Recursive inventory is implemented/tested. Metadata/tool exclusion and occurrence retention are still Team 2 proposals, without supplied Team 6 acknowledgement. Identical sibling duplicates remain schema-invalid. | Obtain acknowledgement and record the schema-valid duplicate boundary; do not weaken CycloneDX validation |
 | LIM-02 | Medium | Version range and required descendant versions follow the supplied Team 2 acceptance. Metadata-only/absent-array input policy is still unspecified; existing behavior is retained. Old top-level records cannot recover omitted children without the original SBOM. | Retain final shared policy record; clarify absent-array behavior; coordinate any resubmission without resetting existing data |
 | LIM-03 | Medium | Product/version nonempty prose conflicts with YAML; timestamp/error/reset details are incomplete. | Reconcile documents without unilateral API changes |
-| LIM-04 | High for delivery | No verified network host, registry entry or cross-team execution. Local Docker and hosted CI evidence only. | Obtain hosting approval, deploy, record SHA/platform/availability and update registry |
-| LIM-05 | Medium | Baseline `f27cfd5` has verified successful main CI, including the policy increment. Current deployment-readiness edits are locally verified but uncommitted. Branch protection was not changed. | Obtain commit/push approval for these edits and retain their own CI result |
+| LIM-04 | High for delivery | Saved public HTTPS run reaches the hosted target but has one failed POST; the race fix is verified only locally. Revision/image metadata, registry entry and two-way cross-team execution remain unverified. | Inspect logs, review/save/redeploy the fix only after approval; rerun hosted tests in an exclusive reset window and retain deployment provenance |
+| LIM-05 | Medium | Readiness/COPY changes are committed through `7686edf`; the current release/reset race fix is locally verified but uncommitted and has no CI run. Branch protection was not changed. | Obtain commit/push approval for this fix and retain its own CI result |
 | LIM-06 | Medium for reporting | No measured server code coverage or recorded human AC-03 review. HTTP evidence is available for that review. | Coordinate server coverage and human review; do not confuse runner coverage with service coverage |
 
 Phase 4 remains REQ-03–06 / AC-04–07, including vulnerability fixture control.
@@ -119,13 +131,15 @@ No teammate activity, hosting result, or pod decision has been invented here.
 - [x] Retain successful main CI URL for committed policy baseline `f27cfd5`.
 - [x] Implement PORT, concurrent-safe schema setup, bounded startup and minimal health routes; locally test them.
 - [x] Add the Google Cloud Console guide and build-only configuration; update CI with isolated deployment checks.
-- [ ] Review/approve committing and pushing the deployment-readiness increment; verify its own CI run.
+- [x] Save deployment-readiness/COPY changes to main through `7686edf`.
+- [ ] Review the new release/reset race fix, authorize saving/redeploying it, and verify its own CI run.
 - [x] Select Google Cloud Run and Cloud SQL PostgreSQL, using deployment branch `main`.
 - [ ] Approve Google Cloud project, budget, region, availability, public test access and service ownership.
 - [ ] Create a separate hosted test database with authenticated encrypted connectivity and new Secret Manager credentials; block direct public database access and preserve local databases.
 - [ ] Apply/verify hosted API port/probes, SQL attachment, secrets/runtime identity, persistent storage, backups and logs.
 - [ ] Deploy an approved SHA/image over HTTPS; record runtime, region, release procedure and restrictions.
-- [ ] Run the complete HTTP suite against that hosted test service and retain target-specific evidence, JUnit results and normal-restart snapshots.
+- [x] Retain the first complete hosted HTTP run: 156 passed / 1 failed, with target-specific HTTP and JUnit evidence.
+- [ ] Rerun hosted acceptance after the approved fix and retain cloud revision/image and normal-restart evidence.
 - [ ] Review representative AC-03 errors with a teammate and record the human review.
 - [ ] Coordinate reset permission and run full suites in both directions with Team 6; record counts, failure owners and coverage limits.
 - [ ] Update the class registry with service and test-runner locations, then finish the Q1-Q9 report and rendered models.

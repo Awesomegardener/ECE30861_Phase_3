@@ -282,14 +282,19 @@ def health_ready():
     return JSONResponse({"status": "ready"}, headers={"Cache-Control": "no-store"})
 
 
-def get_current_time():
-    """Returns test clock time if set, otherwise system UTC time."""
-    with database() as conn, conn.cursor() as cur:
-        cur.execute("SELECT now FROM test_clock WHERE id = 1")
-        row = cur.fetchone()
+def _current_time(cur):
+    """Read the test/system UTC clock using the caller's transaction."""
+    cur.execute("SELECT now FROM test_clock WHERE id = 1")
+    row = cur.fetchone()
     if row and row["now"]:
         return row["now"].astimezone(datetime.timezone.utc)
     return datetime.datetime.now(datetime.timezone.utc)
+
+
+def get_current_time():
+    """Returns test clock time if set, otherwise system UTC time."""
+    with database() as conn, conn.cursor() as cur:
+        return _current_time(cur)
 
 
 # --- Schemas ---
@@ -365,6 +370,17 @@ class ErrorResponse(BaseModel):
 # --- Endpoints ---
 
 
+def _release_response(row, reference_time):
+    current_date = reference_time.astimezone(datetime.timezone.utc).date()
+    return {
+        "release_id": row["release_id"],
+        "product": row["product"],
+        "version": row["version"],
+        "support_end_date": str(row["support_end_date"]),
+        "support_status": "supported" if current_date <= row["support_end_date"] else "unsupported",
+    }
+
+
 @app.post(
     "/api/v1/releases",
     status_code=201,
@@ -379,16 +395,21 @@ def create_release(
     try:
         with database() as conn, conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO releases (release_id, product, version, support_end_date) VALUES (%s, %s, %s, %s)",
+                "INSERT INTO releases (release_id, product, version, support_end_date) "
+                "VALUES (%s, %s, %s, %s) RETURNING release_id, product, version, support_end_date",
                 (release_id, release.product, release.version, release.support_end_date),
             )
+            # Capture the row and reference clock before releasing the INSERT's
+            # table lock. A later reset may remove it, but cannot turn this
+            # successfully committed creation into a follow-up lookup's 404.
+            response = _release_response(cur.fetchone(), _current_time(cur))
     except psycopg2.errors.UniqueViolation:
         raise HTTPException(
             status_code=409,
             detail={"error": {"code": "CONFLICT", "message": "Release already exists"}},
         )
 
-    return get_release(release_id)
+    return response
 
 
 @app.get(
@@ -406,17 +427,7 @@ def get_release(releaseId: str):
             status_code=404, detail={"error": {"code": "NOT_FOUND", "message": "Release not found"}}
         )
 
-    # Calculate support status based on current time (REQ-01 logic)
-    current_date = get_current_time().astimezone(datetime.timezone.utc).date()
-    status = "supported" if current_date <= row["support_end_date"] else "unsupported"
-
-    return {
-        "release_id": row["release_id"],
-        "product": row["product"],
-        "version": row["version"],
-        "support_end_date": str(row["support_end_date"]),
-        "support_status": status,
-    }
+    return _release_response(row, get_current_time())
 
 
 @app.put(

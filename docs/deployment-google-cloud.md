@@ -1,9 +1,13 @@
 # Google Cloud Run and Cloud SQL deployment guide
 
 Prepared October 18, 2026 for `Awesomegardener/ECE30861_Phase_3`, branch `main`.
-These are instructions for a future, explicitly authorized deployment. No Google
-Cloud resources, credentials, build, or hosted service were created during this
-increment. Local results are in [testing.md](testing.md#google-cloud-deployment-readiness).
+Use these instructions for explicitly authorized deployments and configuration
+review. The original readiness increment created no cloud resources. A later
+saved public run against reported SHA `7686edf` has **156 passed / 1 failed**;
+[the release/reset investigation](testing.md#release-creation--concurrent-reset-investigation)
+documents a locally reproduced/fixed race. That fix is not deployed. No cloud
+resource or deployed database was changed during the investigation.
+Original local readiness results are in [testing.md](testing.md#google-cloud-deployment-readiness).
 Console labels can vary; verify the settings before clicking Create or Deploy.
 
 ## What the application now supports
@@ -273,6 +277,11 @@ means the runtime has the right secret, permissions or network path.
    outside your machine. Revisit after scale-to-zero to observe a real cold start.
 3. With explicit reset permission and Team 6 scheduling, run the **portable HTTP
    suite only** against the new synthetic course database. From this checkout:
+
+   Reserve the service/database for one test run at a time, including across
+   teammates, CI jobs and manual tests. The global reset and clock endpoints
+   affect every instance sharing that database; concurrency 1 per Cloud Run
+   instance does not isolate an entire suite or multiple revisions.
 
    ```powershell
    $targetUrl = 'https://REPLACE_WITH_SERVICE.run.app'

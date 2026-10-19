@@ -150,9 +150,15 @@ and reset defaults. Exact error assertions are limited to explicit missing-heade
 contract envelope, expected status and meaningful nonempty reason.
 
 Google Cloud Run plus Cloud SQL PostgreSQL is the selected hosting plan, using
-`main`. No remote deployment URL, cloud resources, registry update or two-way Team 6
-result is verified. PORT, startup and health improvements are verified locally.
+`main`. Saved public test evidence for reported deployed commit `7686edf` has
+**156 passed / 1 failed**. The clock parsed correctly; release creation has a
+confirmed post-commit/reset race, reproduced and fixed locally. The expanded suite
+passes **297 tests**; this fix is uncommitted and not deployed. See
+[the findings and regression evidence](docs/testing.md#release-creation--concurrent-reset-investigation).
+Cloud revision metadata, registry update and two-way Team 6 results remain
+unverified. PORT, startup and health improvements are verified locally.
 The Console guide covers Cloud SQL sockets, secrets, IAM, costs, probes, hosted
 verification and rollback. Root `cloudbuild.yaml` builds/publishes an image only
 when run by an authorized operator; it does not deploy. Cloud configuration,
-spending and deployment still require approval and coordinated testing.
+spending and further deployment require approval and coordinated testing. Reserve
+the shared database for one reset-based test run at a time.

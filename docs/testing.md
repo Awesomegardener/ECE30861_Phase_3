@@ -463,3 +463,116 @@ build the reviewed SHA, configure IAM/SQL attachment/secret/probes, then run hos
 HTTPS tests and persistence checks. Human AC-03 review and two-way Team 6 readiness
 tests are separate evidence still to collect. Local SQL connectivity tests do not
 verify Google-managed IAM, sockets, health routing or availability.
+
+## Release creation / concurrent reset investigation
+
+Investigation base: `7686edf2bbc007ca11c4f284d7e547821488f562` on `main`.
+The fix and tests described here are uncommitted, unpushed and not deployed.
+No request was sent to the public service during this investigation.
+
+### Supplied hosted evidence
+
+The preserved `artifacts/google-cloud/results.xml` reports **156 passed / 1 failed**
+out of 157 HTTP tests, 144.972 seconds (JUnit suite time). Its unique
+`http-evidence-20261018T233934786954Z-0173e1f6.json` contains 918 exchanges targeting
+`https://cra-phase3-api-456725640364.us-central1.run.app/api/v1`. Both the user and
+runner identify deployed SHA `7686edf`; that remains operator-supplied provenance,
+not an independently inspected Cloud Run revision/image digest.
+
+For `test_clock_aware_input_uses_utc_date[2026-11-01T23:59:59.123456+02:00]`:
+
+| UTC interval, October 18, 2026 | Request / outcome |
+|---|---|
+| 23:41:43.170934–43.428551 | Runner's setup reset completes, 204 |
+| 23:41:43.493227–43.692342 | Fractional offset clock accepted, 200; normalized to `2026-11-01T21:59:59.123456Z` |
+| 23:41:43.692342–44.415286 | POST release returns undocumented 404 `NOT_FOUND`, `Release not found`; request ID `031331cc17d54da0a41b9d20886bf735` |
+| 23:41:44.616793–44.940943 | Next test's setup reset, after the failed request finishes |
+
+The timestamp parser succeeded. This runner records no overlapping reset in the
+failed POST interval. Its trace cannot see a different client, test run or direct
+database action. The deployed code's release INSERT commits, closes its connection,
+then calls `get_release()` in a new transaction. An intervening reset can remove
+the row, producing exactly the observed error. Reset is the only application path
+that deletes releases; schema startup does not clear them. This is a **confirmed
+application defect and a plausible explanation for the hosted failure**, not proof
+that a concurrent reset actually occurred on Google Cloud.
+
+To check that hypothesis, inspect existing Cloud Run logs for service
+`cra-phase3-api` around `2026-10-18T23:41:42Z`–`23:41:46Z`, including every revision:
+
+```text
+resource.type="cloud_run_revision"
+resource.labels.service_name="cra-phase3-api"
+timestamp>="2026-10-18T23:41:42Z"
+timestamp<="2026-10-18T23:41:46Z"
+```
+
+Locate the failed request ID and any `/api/v1/test/reset` request overlapping its
+server execution, using platform request latency and application duration logs.
+If absent, investigate direct SQL cleanup, revision/image provenance and database
+connection configuration. No cloud logs or database contents were inspected here.
+
+### Fix and regression strategy
+
+Creation now uses `INSERT ... RETURNING` and reads the UTC reference clock using
+the same cursor/transaction. It constructs the normal release response before
+commit, then returns it only after successful commit. There is no post-commit
+release lookup or clock connection. GET reuses the response formatter; public
+fields, routes, 201/400/409 behavior, UTC end-of-day semantics and reset's 204
+semantics are unchanged. Clock-query failures roll back the insertion rather
+than leaving a row behind after a failed creation response.
+
+PostgreSQL's INSERT table lock conflicts with reset's TRUNCATE lock until the
+transaction completes. After commit, reset may still remove the release; a later
+GET legitimately returns 404. The response describes the completed creation.
+See [INSERT RETURNING](https://www.postgresql.org/docs/16/sql-insert.html) and
+[table-lock compatibility](https://www.postgresql.org/docs/16/explicit-locking.html).
+No locks spanning HTTP requests, new authentication, test namespaces, delays,
+retries hiding the failure, or shared-contract changes were added.
+
+- Six unit regressions cover reset immediately after commit, the exact fractional
+  offset input, UTC date rollover in either direction, system-clock fallback,
+  rollback after a clock-query failure and refusal to report success on commit
+  failure. Before the fix: **5 failed / 1 passed**; after: **6 passed**.
+- `scripts/check_release_reset_race.py` instruments a separate loopback-only
+  Uvicorn process inside the new test API container. Events pause POST immediately
+  after its real PostgreSQL commit, allow a second HTTP request to reset state
+  and change the clock, then resume POST. There are no production test hooks or
+  timing-dependent random stress loops. Before the fix it reproduced the exact
+  HTTP 404 envelope; afterward **both supported/unsupported cases return 201**
+  with their captured clock status, and subsequent GETs correctly return 404.
+- CI now runs that deterministic Docker regression, guarded by explicit
+  `CRA_RACE_TEST_ALLOW_RESET=1` plus test-only database/host checks. It is not a
+  portable test for Cloud SQL or another team's deployment.
+
+### Final local results and preservation
+
+New isolated project: `cra-phase3-deployment-release-race-20261018`, port **18085**,
+new `cra_test` PostgreSQL and `cra-phase3-deployment-release-race-20261018_pgdata_test`
+volume. **297 tests passed / 0 failed / 0 skipped**, 28.07 seconds: 157 Docker HTTP
+acceptance/regression tests and 140 local tests, including the six new regressions.
+The formerly failing fractional-offset HTTP case passes locally. Both controlled
+HTTP reset interleavings and the separate forced SBOM SQL-rollback check pass;
+the latter retains 25 prior components with no idle transactions. Ruff lint and
+format checks pass for 17 Python files; mypy passes both service modules; shared
+OpenAPI/25 locked fixture packages/17-operation validation passes. Only the existing
+dateutil deprecation warning remains. This is not a successful hosted rerun.
+
+Ignored evidence is under `artifacts/release-reset-race/`: `unit-before.xml`,
+`unit-after.xml`, `http-race-before.log`, `http-race-after.log`, `sbom-rollback.log`,
+preservation/protected-input snapshots, and `final/` containing JUnit,
+`http-evidence-20261018T235101323353Z-89b9c387.json` (918 exchanges), operation
+observations/status, image/source provenance and service logs. Source hashes and
+the dirty checkout distinguish this local image from committed deployed `7686edf`.
+
+The original 16 container identities/images/mounts/ports/running states and five
+volumes are preserved. Original live database rows/hashes remain **1 release /
+0 components / 0 clock rows**. Shared OpenAPI, fixtures, both Compose files and
+all three supplied cloud evidence files are unchanged. New synthetic data is
+confined to the new test project, stopped with its volume retained after testing.
+
+Remaining work: review this fix; inspect cloud logs to establish the historical
+trigger; obtain commit/push/redeployment authorization; then rerun all 157 portable
+HTTP tests on the approved deployed image during a coordinated exclusive reset
+window. Global reset/clock controls still let separate suites interfere across
+multiple requests; the creation fix does not provide suite-wide isolation.

@@ -10,11 +10,18 @@ branch/commit and dirty state before making changes.
 
 ## 0. Current implementation and supplied policy exchange
 
-- Local branch `main`, base commit `f27cfd5a901637525a0bf4dc9dce856fc1fd9903`.
-  [GitHub Actions on that main commit](https://github.com/Awesomegardener/ECE30861_Phase_3/actions/runs/39157992256)
-  was checked and is successful, including the saved policy/normalization changes.
-  The current deployment-readiness changes are uncommitted and locally verified;
-  they have no GitHub CI run yet. No commit/push/deployment is authorized this turn.
+- Local branch `main`, base commit `7686edf2bbc007ca11c4f284d7e547821488f562`.
+  Deployment readiness and the Docker COPY fix are already committed. The current
+  release/reset race fix is uncommitted, locally verified and not deployed;
+  no commit/push/deployment is authorized for this investigation.
+- Saved `artifacts/google-cloud` evidence shows a public HTTPS run with **156
+  passed / 1 failed** against reported deployed SHA `7686edf`. Fractional-offset
+  clock parsing succeeded; POST release returned an undocumented 404. The separate
+  post-INSERT lookup has a deterministically reproduced reset race. Creation now
+  captures the returned row and UTC clock inside its insertion transaction, then
+  returns after commit. The trace cannot confirm that another client reset the
+  cloud DB; inspect server logs before assigning the historical cause. Details:
+  `testing.md#release-creation--concurrent-reset-investigation`.
 - The original shared contract is present at `docs/openapi.yaml`; shared Team 6
   fixtures are present under `fixtures/`. Neither is modified. Source precedence
   remains OpenAPI, Phase 2 specification, assignment, then implementation.
@@ -33,24 +40,25 @@ branch/commit and dirty state before making changes.
 - CycloneDX `uniqueItems` still rejects identical siblings. Valid repeats across
   branches or with distinct identifiers are preserved. Relaxing schema validity
   for duplicates would need contract reconciliation; it is not implemented.
-- Previous policy verification on port 18082 passed 264 tests. Current fresh
-  deployment test project `cra-phase3-deployment-20261018`, port 18083, passes
-  **291 tests** (157 HTTP, 134 local), no failures/skips. Six concurrent schema
-  initializers, legacy upgrade preservation, lock timeout/recovery, DDL rollback,
-  custom/default ports, health during DB outage, API/DB restart persistence,
-  graceful shutdown and nested-insert rollback checks pass separately.
-  See `testing.md` for actual evidence, the corrected test-helper timing failure
-  and original-resource preservation checks.
+- Previous deployment-readiness verification passed 291 tests on port 18083.
+  The current fresh `cra-phase3-deployment-release-race-20261018` stack, port 18085,
+  passes **297 tests** (157 HTTP, 140 local), with no failures/skips. Six new unit
+  regressions, two controlled HTTP/SQL reset interleavings and the existing nested
+  INSERT rollback check pass. The formerly failing cloud clock case passes locally;
+  no hosted rerun is claimed. The original containers, volumes, database rows and
+  supplied hosted evidence are preserved. See `testing.md`.
 - Google Cloud Run plus Cloud SQL PostgreSQL, deploying approved `main` source,
-  is the selected hosting plan. No cloud configuration/resources or deployment
-  were created. Cloud-specific PORT support, bounded startup/transaction advisory
+  is the selected hosting plan and a public target appears in the supplied run.
+  No cloud configuration/resources or deployment were changed by this investigation.
+  Cloud-specific PORT support, bounded startup/transaction advisory
   locking and `/health/live`/`/health/ready` are implemented/tested locally. Both
   Compose files remain byte-for-byte unchanged. `deployment-google-cloud.md`
   supplies Console setup, socket DSN/secrets/IAM, low-cost settings, verification
-  and rollback. `cloudbuild.yaml` is build-only and has not run on Google Cloud.
-- The previous policy increment was reviewed, saved to main and passed CI. The
-  user authorizes only deployment-readiness edits/tests now: no commit, push,
-  cloud resource creation or deployment. No Phase 4/5 functionality or shared
+  and rollback. `cloudbuild.yaml` is build-only; the user reports a cloud build and
+  deployment after the saved readiness increment. No build logs/revision metadata
+  were independently fetched for this investigation.
+- The user authorizes investigation and a compatible race fix/tests now: no
+  commit, push, cloud resource creation or deployment. No Phase 4/5 or shared
   contract revision is included. Peer-team coordination remains with Team 6.
 
 ## 1. Product and regulatory context
@@ -164,8 +172,9 @@ The Phase 3 assignment asks for:
 The phase also requires the class deployment registry entry to identify **both web service and automated test runner**. Do not invent a deployment or cross-team test result in the report.
 
 ## 8. Remaining work after this increment
-1. Review the uncommitted deployment-readiness changes; obtain commit/push
-   authorization, then verify the resulting SHA's CI. Baseline f27cfd5 CI passes.
+1. Review the uncommitted release/reset race fix, inspect the saved failure and
+   existing cloud logs, then obtain commit/push/redeployment authorization. Verify
+   the resulting SHA's CI and rerun hosted tests in an exclusive reset window.
 2. Obtain Team 6 acknowledgement of the outstanding proposals in `decisions.md`;
    reconcile any shared-contract changes through the pod before editing YAML.
 3. Follow `deployment-google-cloud.md` after project/billing/region/IAM review and
