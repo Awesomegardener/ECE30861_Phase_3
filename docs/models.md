@@ -3,6 +3,14 @@
 These models describe actual components. Dependency-Track, incident management,
 reports and audit storage are absent from this increment.
 
+The October 26 adapter adds a separate `tester-service` FastAPI process and a
+shared Team 2 harness package. Both role adapters launch the unchanged HTTP pytest
+suite and store JSON session reports in `autograder.sessions`, using one shared
+PostgreSQL advisory execution lock. In deployment this belongs in a separate
+metadata database on the existing Cloud SQL instance; CRA tables above are
+unchanged. See [the adapter architecture diagram](autograder-interface.md#how-it-works).
+These are test execution reports, not Phase 5 regulatory reports or audit records.
+
 ## Architecture and request flow
 
 ```mermaid

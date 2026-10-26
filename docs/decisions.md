@@ -71,3 +71,39 @@ The Phase 3 rubric also says test-runner instructions are unnecessary in Q4.1,
 while the delivery overview requires a runner location/instructions. Supply them
 and ask the instructor if any further artifact is expected. Shared scope reductions
 require both teams' agreement and instructor sign-off; no scope reduction is made.
+
+## October 26 HTTP autograder extension (provisional compatibility)
+
+Staff's supplied announcement identifies separate system/tester base URLs and
+appended `/test*` paths but does not supply complete payloads/status/lifecycle
+rules. The user authorized independent implementation using Team 6's **published
+documentation**, pinned at `9c0b1917b6ed316d51b412685805bd8766b8edea`, as a
+provisional external-interface reference. No peer code/test/database design was
+consulted or copied; no staff approval of this extension is claimed.
+
+We implement both roles, synchronous pytest runs, durable session reports and a
+shared PostgreSQL execution lock. Our 157 tests and all existing CRA behavior
+remain unchanged, including recursive nested inventories. The timeout, allowlist,
+immutable sessions, duplicate-ID 409, configuration 503 and interruption recovery
+choices are documented in `autograder-interface.md` and the separate
+`autograder-openapi.yaml`. They are Team 2 extension policies, not amendments to
+the original shared `openapi.yaml`. The harness's test-result reports do not
+implement Phase 5 regulatory report functionality.
+
+Confirm staff acceptance of the provisional request/report schemas, latest-session
+defaults and synchronous duration (our historical hosted run was about 104 seconds,
+not Team 6's few seconds). Coordinate exclusive destructive-test windows with
+Team 6: their independent tester does not share our execution lock. Metadata
+persistence uses a database on the existing Cloud SQL instance; the retained
+application database is never a default local test target.
+
+Final safety implementation: system role self-tests are restricted to
+`http://127.0.0.1:PORT`, and adapter resets require the dedicated `cra_grading`
+database in both configuration and the live connection. Harness-only pytest
+transport rejects alternate origins/API paths, disables redirects and ignores
+environment proxies; original portable tests/fixtures remain unchanged. Before
+running against our known public URL, the tester requires our system discovery
+to return `role: system, reset_ready: true`, so an old course revision cannot be
+tested before its grading-database migration. That field is an optional Team 2
+extension, not a new Team 6 or staff requirement. The deployment guide specifies
+ordinary SQL roles, separate database/schema grants and migration/traffic order.

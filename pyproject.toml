@@ -10,9 +10,11 @@ select = ["E4", "E7", "E9", "F", "I"]
 
 [tool.mypy]
 python_version = "3.11"
-files = ["cra-service/main.py", "cra-service/sbom_validation.py"]
+files = ["cra-service/main.py", "cra-service/sbom_validation.py", "cra-service/autograder", "tester-service/app.py"]
+explicit_package_bases = true
 ignore_missing_imports = true
 check_untyped_defs = true
 
 [tool.pytest.ini_options]
 testpaths = ["cra-service"]
+pythonpath = ["cra-service"]

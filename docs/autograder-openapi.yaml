@@ -1,0 +1,180 @@
+openapi: 3.1.0
+info:
+  title: Team 2 provisional autograder adapter
+  version: 0.1.0
+  description: >-
+    Independently implemented on both system and tester. Compatibility reference:
+    ReleaseGate docs/openapi.yaml at 9c0b1917b6ed316d51b412685805bd8766b8edea.
+    This is not an instructor-approved replacement for docs/openapi.yaml.
+    Runs are synchronous, destructive, and may take up to 600 seconds.
+    All 157 existing pytest cases remain required; no assertions are weakened.
+paths:
+  /test:
+    get:
+      responses:
+        '200':
+          description: Service discovery (available even when controls are disabled)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [service, role, endpoints]
+                properties:
+                  service: {type: string}
+                  role: {$ref: '#/components/schemas/Role'}
+                  description: {type: string}
+                  enabled: {type: boolean}
+                  reset_ready:
+                    type: boolean
+                    description: Team 2 extension; true only for an enabled system with verified cra_grading reset configuration. Tester always returns false.
+                  endpoints: {type: object, additionalProperties: {type: string}}
+  /test/setup:
+    post:
+      description: >-
+        System atomically resets releases/components/clock only in the dedicated
+        cra_grading database, verified against its configuration and connection.
+        System target must be loopback at the container PORT; it cannot be remote.
+        Optional now is applied in the same transaction.
+        Tester selects an approved target without contacting or resetting it yet.
+        Query values also work; conflicting body/query values return 400.
+        Duplicate session IDs return 409; existing reports are never overwritten.
+      parameters: &inputs
+        - {name: session_id, in: query, schema: {type: string}}
+        - {name: target_base_url, in: query, schema: {type: string}}
+        - {name: now, in: query, schema: {type: string, format: date-time}}
+      requestBody: &body
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Input'}
+      responses:
+        '200':
+          description: Ready session
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session_id, status, role]
+                properties:
+                  session_id: {type: string}
+                  status: {const: ready}
+                  role: {$ref: '#/components/schemas/Role'}
+                  created_at: {type: string, format: date-time}
+                  target_base_url: {type: [string, 'null']}
+        '400': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /test/run:
+    post:
+      description: >-
+        Fresh pytest subprocess with a transport guard: only the selected origin's
+        /api/v1/ requests, no redirects or inherited proxies. Uses the requested or latest session; if neither
+        exists, creates a session first. Unknown explicit session returns 404.
+        Completed runs are returned without re-execution. Start another session
+        to rerun. Stored targets cannot be changed. now is accepted only when
+        creating a new system session, and each original test sets its own clock.
+        Before testing Team 2's known public URL, require its GET /test discovery
+        to return role system and reset_ready true; otherwise return completed/error
+        without launching pytest or issuing a reset. This extra readiness signal
+        is not required from Team 6's independently implemented service.
+      parameters: *inputs
+      requestBody: *body
+      responses:
+        '200':
+          description: Execution completed (result may be pass, fail, or error)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session_id, status, result]
+                properties:
+                  session_id: {type: string}
+                  status: {const: completed}
+                  result: {enum: [pass, fail, error]}
+                  summary: {$ref: '#/components/schemas/Summary'}
+                  report_url: {type: string}
+        '400': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /test/report:
+    get:
+      description: >-
+        Read requested or latest session for this role. While a run is active,
+        status stays ready and running is true (no premature success). An abandoned
+        run becomes completed/error on the next report/control request. Durable
+        JSON reports survive process and instance restarts.
+      parameters:
+        - {name: session_id, in: query, schema: {type: string}}
+      responses:
+        '200':
+          description: Durable report
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session_id, status, role, checks]
+                properties:
+                  session_id: {type: string}
+                  status: {enum: [ready, completed]}
+                  role: {$ref: '#/components/schemas/Role'}
+                  target_base_url: {type: [string, 'null']}
+                  result: {enum: [pass, fail, error, null]}
+                  summary: {$ref: '#/components/schemas/Summary'}
+                  error: {type: [string, 'null']}
+                  started_at: {type: [string, 'null']}
+                  finished_at: {type: [string, 'null']}
+                  duration_ms: {type: [integer, 'null']}
+                  running: {type: boolean}
+                  checks:
+                    type: array
+                    items: {$ref: '#/components/schemas/Check'}
+        '400': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+components:
+  responses:
+    Error:
+      description: Meaningful error envelope; no database credentials
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: object
+                required: [code, message]
+                properties:
+                  code: {type: string, minLength: 1}
+                  message: {type: string, minLength: 1}
+  schemas:
+    Role: {enum: [system, tester]}
+    Input:
+      type: object
+      additionalProperties: false
+      properties:
+        session_id: {type: string, pattern: '^[A-Za-z0-9_.-]{1,128}$'}
+        target_base_url: {type: string}
+        now: {type: string, format: date-time}
+    Summary:
+      type: object
+      additionalProperties: {type: integer}
+      description: >-
+        required_passed/failed and informational_passed/failed plus total, passed,
+        failed, errors, skipped. All existing cases are required. Setup/teardown
+        errors are JUnit records, and may add records beyond the 157 test cases.
+    Check:
+      type: object
+      required: [id, ac, title, required, passed, expected, actual]
+      properties:
+        id: {type: string}
+        ac: {type: string}
+        title: {type: string}
+        required: {type: boolean}
+        passed: {type: boolean}
+        expected: {type: string}
+        actual: {type: string}
+        request: {type: string}
+        response: {type: string}
+        note: {type: string}

@@ -11,6 +11,9 @@ from contextlib import asynccontextmanager, contextmanager
 from typing import Any, Literal
 
 import psycopg2
+from autograder.api import install as install_autograder
+from autograder.config import GRADING_DATABASE, HarnessError
+from autograder.runner import shutdown_children
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
@@ -51,10 +54,23 @@ async def lifespan(application: FastAPI):
                 raise
             remaining = _startup_remaining_ms(deadline) / 1000
             await asyncio.sleep(min(delay, remaining))
-    yield
+    try:
+        yield
+    finally:
+        shutdown_children()
 
 
 app = FastAPI(title="CRA Vulnerability Response Service", version="1.0.0", lifespan=lifespan)
+
+
+@app.get("/", include_in_schema=False)
+def home():
+    return {
+        "service": "Team 2 CRA Phase 3",
+        "docs": "/docs",
+        "health": "/health/ready",
+        "test": "/test",
+    }
 
 
 @app.middleware("http")
@@ -552,3 +568,39 @@ def service_openapi():
 
 # FastAPI supports overriding its schema hook on the application instance.
 app.openapi = service_openapi  # type: ignore[method-assign]
+
+
+def autograder_reset(now, approved_database):
+    """Opt-in adapter reset; original /api/v1 controls retain their contract."""
+    if approved_database != GRADING_DATABASE:
+        raise HarnessError(
+            503, "RESET_DISABLED", "Adapter resets require the dedicated cra_grading database"
+        )
+    with database() as conn, conn.cursor() as cur:
+        cur.execute("SELECT current_database() AS name")
+        if cur.fetchone()["name"] != approved_database:
+            raise HarnessError(
+                503, "RESET_DISABLED", "Database is not the approved disposable database"
+            )
+        cur.execute("TRUNCATE releases CASCADE")
+        cur.execute("DELETE FROM test_clock")
+        if now is not None:
+            cur.execute("INSERT INTO test_clock (id, now) VALUES (1, %s)", (now,))
+
+
+def autograder_verify_database(approved_database):
+    with database() as conn, conn.cursor() as cur:
+        cur.execute("SELECT current_database() AS name")
+        if approved_database != GRADING_DATABASE or cur.fetchone()["name"] != GRADING_DATABASE:
+            raise HarnessError(
+                503, "RESET_DISABLED", "Database is not the approved disposable database"
+            )
+
+
+install_autograder(
+    app,
+    "system",
+    reset=autograder_reset,
+    validate_clock=lambda value: ClockUpdate(now=value).now,
+    verify_database=autograder_verify_database,
+)

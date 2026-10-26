@@ -2,7 +2,8 @@
 
 This is a chronological record. Statements about uncommitted code or missing CI
 in earlier entries describe that stage; current CI and policy/test results are
-recorded at the end. Public deployment and cross-team tests remain unverified.
+recorded at the end. The October 26 entry distinguishes saved hosted evidence
+from local adapter verification and deployment that has not occurred.
 
 ## Baseline — 2026-10-17
 
@@ -576,3 +577,213 @@ trigger; obtain commit/push/redeployment authorization; then rerun all 157 porta
 HTTP tests on the approved deployed image during a coordinated exclusive reset
 window. Global reset/clock controls still let separate suites interfere across
 multiple requests; the creation fix does not provide suite-wide isolation.
+
+## October 26 — independent HTTP autograder system and tester
+
+Starting checkout: clean `main`, `609ab4038b7c8cf3de060470fcd628e81fa15c0a`.
+This increment is local and uncommitted; no push, GitHub Actions run or cloud
+deployment occurred. The prior release/reset fix is committed. Existing saved
+`artifacts/google-cloud-rerun` evidence records 157/157 against operator-supplied
+target SHA `609ab40`; that does not establish a deployed adapter revision.
+
+Only Team 6's README/OpenAPI documentation was read, pinned at
+`9c0b1917b6ed316d51b412685805bd8766b8edea`. It is a provisional external-interface
+reference, not official staff approval. No peer implementation/test files were
+read or copied. Our original shared contract, fixtures, `test_api.py` and
+`conftest.py` remain unchanged. Both roles run the original assertions.
+
+### Actual local results
+
+| Verification | Result / evidence |
+|---|---|
+| Before edits: existing non-HTTP regression suite | 140 passed |
+| Original HTTP collection, before and after | 157 cases, unchanged |
+| Full final original + new local suites | **345 passed, 0 failed, 0 errors, 0 skipped**, 25.72 s; `artifacts/autograder/regression-final-results.xml` |
+| Breakdown of 345 | Original 297 (157 HTTP + 140 local), 5 new system adapter tests, 43 tester unit/health/store tests |
+| Full actual HTTP adapter suite | **7 passed**, 83.90 s; `artifacts/autograder/http-final-results.xml` |
+| System setup → run → report | 157 passed / 0 failed/errors; real subprocess 24.583 s; `system-report.json` |
+| Tester setup → run → report | 157 passed / 0 failed/errors; real subprocess 24.940 s; `tester-report.json` |
+| Intentionally broken local HTTP target | **157 actual assertion failures**, 0 errors, accurately returned `result: fail`; 5.502 s; `failing-report.json` |
+| Runtime restart/kill/timeout checks | 3 passed; `artifacts/autograder/runtime-results.json` |
+| Schema startup compatibility | All 6 existing real PostgreSQL checks passed, including 6 concurrent initializers and legacy row preservation |
+| Release creation/reset race | Both existing controlled HTTP/SQL interleavings passed: creation 201 with captured support status; subsequent GET 404 after intentional reset |
+| SBOM rollback | Injected final nested INSERT failed cleanly; 25 prior components retained; JSON 500; no idle transactions |
+| Ruff lint / format | Passed, 30 Python files formatted |
+| mypy | Passed, 8 production source files |
+| Shared contract/fixture check | OpenAPI 3.1 valid; all 25 locked packages match; 17 original operations reported |
+| Separate extension schema | OpenAPI 3.1 validation passed; CI's inline validation command also executed locally |
+| Both final Docker builds | Passed, Python 3.11 slim; existing and new Compose configurations validated |
+| JSON homepages and tester DB readiness | Real HTTP 200 on both `/` routes and tester `/health/ready` |
+| GitHub CI / public adapters | **Not run / not deployed** for this increment |
+
+These counts describe outer pytest cases; the 157-case child runs inside the
+seven HTTP checks are additional executions, not extra collected outer cases.
+Final local pytest emits one existing dateutil Python 3.12 deprecation warning.
+The containers execute Python 3.11, as CI is configured to do.
+
+The seven HTTP checks validate responses against both our extension schemas and
+the four corresponding operations from the pinned Team 6 OpenAPI, supplied via
+`TEAM6_AUTOGRADER_SPEC=artifacts/autograder/team6-reference.yaml`. Extra setup
+409/configuration 503 responses are documented Team 2 safety policies; this does
+not prove staff protocol approval, timing compatibility or live peer conformance.
+Real checks include malformed input, unknown sessions, unapproved/null targets,
+query/JSON sessions, immutable completed retries, invalid clock without reset,
+timezone-aware system setup, required per-test fields and overlapping adapter
+setup/run rejection. Completed reports survive tester restart. A killed active
+run is recovered as error; prior reports remain intact. A second tester instance
+shares reports; a real one-second run timeout kills its child and persists error.
+
+During development, a new concurrency test first failed because report reads
+briefly acquired the execution mutex. Ordinary ready/completed polling no longer
+acquires it; a dedicated store regression and full HTTP reruns pass. A combined
+Windows run initially produced 328 passed / 17 **setup errors** because the
+escalated identity could not use an existing host pytest temp directory. Its XML
+is retained as `regression-results.xml`. The final run used a fresh workspace
+`--basetemp artifacts/autograder/tmp-<unique-id>` and all 345 passed. Earlier
+format/type checks exposed issues that were corrected before the final checks;
+the final results above do not hide those intermediate failures.
+
+### Isolation, data preservation and reproducibility
+
+Docker Desktop was initially stopped; it was started locally for these checks.
+Its existing restart-policy containers resumed automatically. No existing
+container was rebuilt/reconfigured and no database/volume was deleted. Destructive
+calls were confined to the newly created project
+`cra-phase3-autograder-20261026`, ports 18086/18087, its own
+`cra-phase3-autograder-20261026_harness_test` volume and intentionally broken
+container target. A separate timeout-only tester container was created, tested
+and stopped, with its shared test volume retained. No cloud or Team 6 reset/run
+request was made. The three startup-check synthetic databases are also retained
+inside the new test project's PostgreSQL instance.
+
+After verification the new test stack was stopped with `docker compose stop`;
+its containers, reports and volume are retained. The original running services
+were not stopped. Start the dedicated project again to inspect its local reports.
+
+Read-only before/after snapshots of the original `cra_postgres` database match:
+1 release, 0 components, 0 clock rows. Row-content hashes are unchanged:
+`08eb20aebbbbe38d1da4907ae9f03721` for releases and
+`d751713988987e9331980363e24189ce` for each empty table. All six pre-existing
+Docker volumes remain, including `cra-service_pgdata`. Original CRA schema and
+stored data remain untouched. Existing Compose build definitions changed only
+to select the root context/Dockerfile; ports, passwords, DB settings, service
+names and named volumes did not change.
+
+Run commands and the metadata lock's cooperation/network-partition limits are in
+`autograder-interface.md`. Deployment and registry steps are in
+`deployment-tester-google-cloud.md`. A separate disposable grading database and
+shared persistent report database on the existing Cloud SQL instance must be
+configured and verified before enabling cloud resets. This does not authorize
+cloud changes or establish Cloud SQL report connectivity.
+
+### Files in this increment
+
+New runtime: `cra-service/autograder/__init__.py`, `api.py`, `config.py`,
+`runner.py`, `store.py`, and `cra-service/requirements-harness.txt`.
+New separate tester: `tester-service/app.py`, `Dockerfile`, `requirements.txt`,
+`.env.example`, `docker-compose.test.yml`.
+New tests/helpers: `cra-service/test_autograder.py`,
+`tester-service/tests/test_core.py`, `test_store.py`, `test_tester_health.py`,
+`test_http.py`, `broken_target.py`, and `scripts/check_autograder_runtime.py`.
+New build/docs: root `.dockerignore`, `cloudbuild-tester.yaml`,
+`docs/autograder-openapi.yaml`, `autograder-interface.md`,
+`deployment-tester-google-cloud.md`.
+Modified: `cra-service/main.py`, `Dockerfile`, both existing Compose build
+definitions, `cloudbuild.yaml`, `.github/workflows/ci.yml`, `pyproject.toml`,
+`README.md`, and `docs/decisions.md`, `project_context.md`, `phase3_status.md`,
+`models.md`, `deployment-google-cloud.md`, `testing.md`.
+No existing files were deleted or moved. Generated evidence remains ignored.
+
+## October 26 — final autograder safety corrections
+
+The final review identified two safety defects: Requests could forward a reset
+POST through a 307/308 redirect outside the selected target, and system settings
+could default to our public service while verifying a different local database.
+The deployment guide also created built-in Cloud SQL users without preventing
+automatic administrative roles and omitted the grading schema CREATE grant.
+
+Implemented corrections:
+
+- New `cra-service/autograder/pytest_guard.py` is loaded explicitly by the harness
+  child with `-p`; original `test_api.py` and `conftest.py` are unchanged. Every
+  prepared HTTP request must match the selected origin and `/api/v1/` path;
+  all redirects are disabled and inherited proxies bypassed. Newly created
+  sessions and the concurrent SBOM test are covered. Runner reauthorizes the
+  target immediately before starting a child.
+- System settings default only to `http://127.0.0.1:PORT`; remote/wrong-port
+  overrides are rejected even if allowlisted. Adapter setup/run require both
+  configured and connected DB names to be `cra_grading`; retained/course DB names
+  are not alternative reset approvals. Original CRA API handlers are unchanged.
+- System discovery adds optional `reset_ready`, using a read-only config/database
+  check. Before testing our known public URL, the tester requires role system and
+  this signal true; old/unready course revisions are refused before pytest starts.
+  Team 6 is not required to implement this Team 2-only safety signal. The separate
+  extension schema documents it; our shared OpenAPI is untouched.
+- The Console guide now specifies ordinary SQL login roles, separate grading and
+  metadata database grants, public-schema usage/create only for the grading role,
+  password prompts/Secret Manager, and permission verification. New candidate
+  revisions start with controls disabled; verify the DBs/roles, switch 100% system
+  traffic to grading, confirm discovery readiness, then enable the tester.
+
+Actual final results (all fresh local data):
+
+| Check | Result |
+|---|---|
+| Non-destructive tests included in full run | **232 passed** (140 original local, 9 adapter, 83 tester unit/health/store/safety) |
+| Full regression + unit run | **389 passed / 0 failed / 0 errors / 0 skipped**, 25.14 s |
+| Original HTTP case collection | **157 unchanged cases** |
+| Actual system/tester adapter HTTP suite | **8 passed**, 86.56 s; responses validated against our extension and pinned Team 6 schemas |
+| System child suite | **157 passed**, 23.081 s |
+| Tester child suite | **157 passed**, 23.728 s |
+| Intentionally broken HTTP target | **157 real assertion failures**, correctly reported fail |
+| Redirect target to an unapproved sentinel | **157 fixture errors**, correctly reported error; **0 destructive requests reached the sentinel** |
+| Storage/runtime checks | **6 passed**: ordinary roles/cross-DB permissions, report survives domain reset, report survives tester restart, killed run recovery, timeout child cleanup/shared report, wrong DB approval refused without deleting a grading release |
+| Ruff / format | Passed; 33 Python files formatted |
+| mypy | Passed; 9 production source files |
+| Both OpenAPI documents | Valid OpenAPI 3.1 |
+| Final Docker builds | Passed; guard plugin and both services ran in Python 3.11 images |
+| GitHub CI / cloud | Not run / not deployed for this uncommitted increment |
+
+The 40 new transport/public-target unit cases include 301/302/303/307/308 redirects
+for POST/PUT to same/different origins, new sessions, direct unapproved requests,
+proxy bypass, missing plugin target, default/alternate PORT, remote/wrong-port
+overrides, pre-spawn authorization and old/unready public revisions. Four more
+adapter cases cover retained database approval. An initial mypy missing-stubs
+finding was resolved with scoped `import-untyped` annotations; final lint/type
+checks and tests pass. Pytest still emits one existing dateutil deprecation
+warning on the host Python 3.12. The containers use Python 3.11.
+
+Evidence is retained, ignored by Git, in `artifacts/autograder-safety/`:
+`regression-final-results.xml`, `http-final-results.xml`, `runtime-results.json`,
+system/tester/failing/redirect report JSON, sentinel results, HTTP evidence and
+preservation snapshots. Earlier first-pass 381/8 results are separate from the
+final 389/8 run after adding public-target readiness protection.
+
+All reset-based tests ran only in the new
+`cra-phase3-autograder-safety-20261026-01` project, host ports 18089/18090 and a
+new dedicated volume, verified absent before creation. Its init SQL creates
+separate `cra_grading` and `cra_autograder` databases and ordinary runtime roles;
+it is test-only and is never used against Cloud SQL. The SQL role checks prove
+no SUPERUSER/CREATEDB/CREATEROLE/REPLICATION, correct schema access, and no CONNECT
+between the two runtime databases. Temporary timeout/unsafe-config containers
+belong only to this new project and were stopped with their storage retained.
+The six main test services were then stopped, without deleting the volume.
+
+Before/after read-only Docker inventories confirm **all 23 pre-existing container
+identities/images/mounts/running states and all 7 pre-existing volumes unchanged**.
+No SQL or reset requests were issued to any pre-existing database, public service
+or Team 6 system. Shared OpenAPI, fixtures and the original HTTP test/fixture files
+remain unchanged. No commit, push, cloud change or deployment occurred.
+
+Additional files in this safety increment: `autograder/pytest_guard.py`,
+`tester-service/tests/test_transport_safety.py`, `init-databases.sql` and
+`transport_target.py`. Updated pending files include config/runner/adapter code,
+adapter/core/HTTP tests, the isolated harness Compose file/runtime checker, and
+the extension/deployment/context/status/decision/testing/README documents.
+
+No local implementation blocker remains from the three findings. Before hosted
+use, obtain deployment approval, provision and verify the documented Cloud SQL
+roles/secrets, switch the system to its disposable grading DB, validate deployed
+readiness and run acceptance in an exclusive window. GitHub Actions must run
+after an approved push. Direct legacy resets and independent peer testers still
+require coordination; the cooperative mutex does not fence those clients.

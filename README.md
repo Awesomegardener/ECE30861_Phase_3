@@ -21,7 +21,7 @@ ignored by Git. Creating `.env` does not rotate a database password. For passwor
 containing URL-special characters, configure an appropriately encoded
 `DATABASE_URL` as described in `.env.example`.
 
-Application: `http://localhost:8080`; generated docs: `/docs`. PostgreSQL uses
+Application: `http://localhost:8080` (JSON homepage); generated docs: `/docs`. PostgreSQL uses
 the existing `pgdata` named volume and is bound to loopback. Schema initialization
 serializes concurrent starts and widens existing string columns only when needed,
 without deleting records. Normal API/DB restarts
@@ -32,9 +32,32 @@ Operational health: `/health/live` returns 200 without querying PostgreSQL;
 the database is unavailable. Both omit shared API schemas. Docker uses `PORT`
 when provided and defaults to 8080; the existing Compose mappings stay unchanged.
 
+## HTTP autograder services (October 26 local increment)
+
+Both system and separate `tester-service/` expose discovery, setup, synchronous
+run and report at `/test*`. They run our unchanged 157-case pytest suite and
+persist real per-test outcomes in PostgreSQL, with a shared execution lock.
+Controls default disabled and require explicit disposable-target authorization.
+System self-tests are restricted to loopback at `PORT`, and adapter resets to
+the dedicated `cra_grading` database. Harness subprocesses block redirects and
+unapproved destinations. Our public target must advertise guarded reset readiness
+before the tester launches destructive checks. The local harness stack uses
+separate grading/report databases and ordinary roles in a new isolated volume.
+No new tester is deployed yet; the existing public system has not been updated
+by this local increment. The GitHub Python blob is not a tester service URL.
+
+- [Protocol, safety boundaries and local HTTP verification](docs/autograder-interface.md)
+- [Separate provisional HTTP contract](docs/autograder-openapi.yaml)
+- [Console deployment, settings, secrets and registry](docs/deployment-tester-google-cloud.md)
+
+Both Dockerfiles now build from the repository root, for example
+`docker build -f cra-service/Dockerfile .`; existing Compose commands still work.
+CRA database settings, ports and persistent volume names are preserved. The
+extension does not replace our shared specification or implement later phases.
+
 ## Run tests without clearing application data
 
-The HTTP suite calls `/test/reset`. Use the dedicated test stack, which has a
+The HTTP suite calls `/api/v1/test/reset`. Use the dedicated test stack, which has a
 different Compose project and named volume. From the repository root:
 
 ```powershell
@@ -102,8 +125,8 @@ deployed-service verification must be recorded separately.
 ## Static checks and CI
 
 ```powershell
-.\.venv\Scripts\python.exe -m ruff check cra-service scripts
-.\.venv\Scripts\python.exe -m ruff format --check cra-service scripts
+.\.venv\Scripts\python.exe -m ruff check cra-service tester-service scripts
+.\.venv\Scripts\python.exe -m ruff format --check cra-service tester-service scripts
 .\.venv\Scripts\python.exe -m mypy
 .\.venv\Scripts\python.exe -X utf8 -B scripts/check_contract.py
 ```
@@ -149,11 +172,11 @@ and reset defaults. Exact error assertions are limited to explicit missing-heade
 `INVALID_REQUEST` and unchanged shared-fixture expectations; other errors need the
 contract envelope, expected status and meaningful nonempty reason.
 
-Google Cloud Run plus Cloud SQL PostgreSQL is the selected hosting plan, using
-`main`. Saved public test evidence for reported deployed commit `7686edf` has
-**156 passed / 1 failed**. The clock parsed correctly; release creation has a
-confirmed post-commit/reset race, reproduced and fixed locally. The expanded suite
-passes **297 tests**; this fix is uncommitted and not deployed. See
+Google Cloud Run plus Cloud SQL PostgreSQL is the selected deployment architecture.
+The release/reset fix is committed at `609ab4038b7c8cf3de060470fcd628e81fa15c0a`.
+Saved public rerun evidence records **157 passed / 0 failed** against that
+operator-supplied target SHA; live revision metadata was not reverified here.
+The previous `7686edf` run recorded 156 passed / 1 failed. See
 [the findings and regression evidence](docs/testing.md#release-creation--concurrent-reset-investigation).
 Cloud revision metadata, registry update and two-way Team 6 results remain
 unverified. PORT, startup and health improvements are verified locally.

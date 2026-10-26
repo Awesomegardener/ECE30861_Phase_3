@@ -1,5 +1,39 @@
 # Phase 3 status
 
+## Current local autograder increment — October 26, 2026
+
+Base: clean `main` at `609ab4038b7c8cf3de060470fcd628e81fa15c0a` before these
+uncommitted changes. The earlier release/reset fix is committed; a saved public
+rerun records 157/157 at that operator-supplied SHA. The new adapter has no commit,
+push, GitHub Actions execution or cloud deployment yet.
+
+Added: JSON system homepage; four `/test*` routes on both roles; separate HTTP
+tester image/build; unchanged pytest subprocess execution; durable per-test
+reports and cross-service locking in PostgreSQL; opt-in approved-target/reset
+guards. Team 6's pinned documentation is provisional compatibility evidence,
+not official staff approval or a replacement CRA contract. Domain functionality,
+shared OpenAPI/fixtures and Phase 4/5 boundaries are preserved.
+
+Final safety fixes: harness-only transport checks block redirects and alternate
+origins; system defaults to its own loopback PORT and rejects remote overrides;
+adapter resets require `cra_grading` in both configuration and the actual DB.
+The tester probes our public target's `reset_ready` discovery signal before
+launching pytest; this does not impose a new requirement on Team 6. A fresh local
+dual-database stack verifies ordinary-role permissions and report isolation.
+Console guidance now avoids automatic elevated SQL roles and orders the system
+database/traffic switch before enabling the tester. See the latest verification
+entry in `testing.md`; cloud resources remain untouched.
+
+Local evidence/results are recorded in [testing.md](testing.md). Deployment still
+requires reviewed images, a shared metadata DB on the existing Cloud SQL instance,
+an explicitly disposable target database, secrets/IAM and independent hosted
+verification. See [the deployment checklist](deployment-tester-google-cloud.md).
+Registry deadline: October 27 at 11:59 p.m. Eastern; availability October 28–29.
+Remaining protocol assumptions and external reset interference are documented in
+[autograder-interface.md](autograder-interface.md).
+
+## Historical release/reset investigation snapshot (superseded above)
+
 Current checkout is `main` at `7686edf2bbc007ca11c4f284d7e547821488f562` plus an
 uncommitted release/reset race fix. Readiness/COPY changes are already saved.
 The earlier [policy baseline CI run](https://github.com/Awesomegardener/ECE30861_Phase_3/actions/runs/39157992256)

@@ -1,0 +1,19 @@
+# Build only; creates no Cloud Run revision.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --file
+      - tester-service/Dockerfile
+      - --tag
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/cra-tester:$COMMIT_SHA
+      - --build-arg
+      - BUILD_SHA=$COMMIT_SHA
+      - .
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/cra-tester:$COMMIT_SHA
+substitutions:
+  _REGION: us-central1
+  _REPOSITORY: cra-phase3
+options:
+  logging: CLOUD_LOGGING_ONLY

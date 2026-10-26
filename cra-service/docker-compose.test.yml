@@ -16,7 +16,9 @@ services:
       retries: 30
 
   api:
-    build: .
+    build:
+      context: ..
+      dockerfile: cra-service/Dockerfile
     ports:
       - "127.0.0.1:${TEST_API_PORT:-18080}:8080"
     environment:

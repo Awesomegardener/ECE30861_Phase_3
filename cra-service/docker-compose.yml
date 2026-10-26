@@ -18,7 +18,9 @@ services:
       retries: 30
 
   api:
-    build: .
+    build:
+      context: ..
+      dockerfile: cra-service/Dockerfile
     container_name: cra_api
     restart: always
     ports:

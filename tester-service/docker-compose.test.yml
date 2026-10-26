@@ -1,0 +1,81 @@
+# Fresh isolated stack only. Never references an existing database or volume.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: cra_test
+      POSTGRES_PASSWORD: local_test_only
+      POSTGRES_DB: cra_test
+    volumes:
+      - harness_test:/var/lib/postgresql/data
+      - ./tests/init-databases.sql:/docker-entrypoint-initdb.d/10-grading.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cra_test -d cra_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  api:
+    build:
+      context: ..
+      dockerfile: cra-service/Dockerfile
+    ports:
+      - "127.0.0.1:${HARNESS_SYSTEM_PORT:-18086}:8080"
+    environment:
+      DATABASE_URL: postgresql://cra_grading_app:local_grading_only@db:5432/cra_grading
+      AUTOGRADER_DATABASE_URL: postgresql://cra_harness:local_report_only@db:5432/cra_autograder
+      AUTOGRADER_ENABLED: "true"
+      AUTOGRADER_ALLOW_RESET: "true"
+      AUTOGRADER_APPROVED_TARGETS: http://127.0.0.1:8080
+      AUTOGRADER_RESET_DATABASE: cra_grading
+      AUTOGRADER_RUN_TIMEOUT_SECONDS: "600"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/ready',timeout=3)"]
+      interval: 2s
+      timeout: 4s
+      retries: 30
+  tester:
+    build:
+      context: ..
+      dockerfile: tester-service/Dockerfile
+    ports:
+      - "127.0.0.1:${HARNESS_TESTER_PORT:-18087}:8080"
+    environment:
+      AUTOGRADER_DATABASE_URL: postgresql://cra_harness:local_report_only@db:5432/cra_autograder
+      AUTOGRADER_ENABLED: "true"
+      AUTOGRADER_ALLOW_RESET: "true"
+      AUTOGRADER_DEFAULT_TARGET: http://api:8080
+      AUTOGRADER_APPROVED_TARGETS: http://api:8080,http://broken:8080,http://redirect:8080
+      AUTOGRADER_RUN_TIMEOUT_SECONDS: "600"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/test',timeout=3)"]
+      interval: 2s
+      timeout: 4s
+      retries: 30
+  broken:
+    image: python:3.11-slim
+    # Intentional non-CRA target to verify genuine pytest failures, never a production URL.
+    command: ["python", "/broken_target.py"]
+    volumes:
+      - ./tests/broken_target.py:/broken_target.py:ro
+  redirect:
+    image: python:3.11-slim
+    command: ["python", "/transport_target.py"]
+    environment:
+      REDIRECT_TO: http://sentinel:8080/api/v1/test/reset
+    volumes:
+      - ./tests/transport_target.py:/transport_target.py:ro
+  sentinel:
+    image: python:3.11-slim
+    command: ["python", "/transport_target.py"]
+    ports:
+      - "127.0.0.1:${HARNESS_SENTINEL_PORT:-18092}:8080"
+    volumes:
+      - ./tests/transport_target.py:/transport_target.py:ro
+volumes:
+  harness_test:

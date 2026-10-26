@@ -10,6 +10,37 @@ branch/commit and dirty state before making changes.
 
 ## 0. Current implementation and supplied policy exchange
 
+**October 26 superseding handoff:** base `main` is
+`609ab4038b7c8cf3de060470fcd628e81fa15c0a`; the release/reset race fix is committed.
+Saved hosted rerun evidence records 157/157 at that operator-supplied target SHA.
+The paragraphs below retain the historical October 18 investigation state.
+
+The user has now authorized local HTTP autograder implementation/verification,
+without commit/push/deployment. Both roles expose `/test`, `/test/setup`,
+`/test/run`, `/test/report`, using our independent adapter and the unchanged
+157-case suite. Reports and shared execution locking use PostgreSQL metadata,
+ideally a separate DB on the existing Cloud SQL instance. New controls default
+disabled and require approved disposable targets. Original CRA endpoints/data
+model/shared OpenAPI/fixtures are unchanged. The original Compose commands and
+volumes remain valid; Docker build context is now root to package test inputs.
+The separate tester is not deployed yet. See `autograder-interface.md`,
+`autograder-openapi.yaml`, `deployment-tester-google-cloud.md` and actual results
+in `testing.md`. Team 6's documentation at SHA
+`9c0b1917b6ed316d51b412685805bd8766b8edea` is a provisional external-interface
+reference only. Staff protocol approval remains unconfirmed. Do not reset public
+targets during local development. Meet the October 27 11:59 p.m. Eastern registry
+deadline and October 28–29 availability window only after deployment approval.
+
+**Final safety correction:** only harness child runs load
+`autograder.pytest_guard`; it validates each request's origin/API path, follows
+no redirects and bypasses environment proxies. System self-target is exclusively
+loopback at PORT; domain reset requires the dedicated `cra_grading` DB. The known
+Team 2 public URL must return `reset_ready: true` before tester execution, to
+avoid testing an old course revision before migration. This optional extension
+is not required of Team 6. Fresh local tests now use ordinary roles and separate
+grading/report databases; earlier test volumes must not be reused or deleted.
+The deployment guide corrects SQL role/schema privileges and rollout order.
+
 - Local branch `main`, base commit `7686edf2bbc007ca11c4f284d7e547821488f562`.
   Deployment readiness and the Docker COPY fix are already committed. The current
   release/reset race fix is uncommitted, locally verified and not deployed;

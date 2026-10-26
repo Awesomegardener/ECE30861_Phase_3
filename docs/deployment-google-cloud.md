@@ -1,5 +1,14 @@
 # Google Cloud Run and Cloud SQL deployment guide
 
+**October 26 autograder extension:** use
+[the updated system + separate tester deployment guide](deployment-tester-google-cloud.md)
+for root build contexts, disposable grading/report databases, 900-second timeout,
+concurrency and registry settings. The 60-second/concurrency-1 settings below
+describe the earlier standalone CRA deployment and are insufficient for the new
+self-test interface. Historical failure/deployment notes below are superseded by
+the saved 157/157 rerun at operator-supplied SHA `609ab40`; no new adapter deployment
+has occurred.
+
 Prepared October 18, 2026 for `Awesomegardener/ECE30861_Phase_3`, branch `main`.
 Use these instructions for explicitly authorized deployments and configuration
 review. The original readiness increment created no cloud resources. A later
