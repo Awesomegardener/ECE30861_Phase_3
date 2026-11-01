@@ -1,4 +1,19 @@
+> November 1 Phase 4 update: the current portable suite is **353** cases (157
+> original + 196 Phase 4). See [implementation/results](phase4-pod-update.md),
+> [OSV operations](osv-snapshots.md), [source ADR](adr-0001-osv-snapshots.md), and
+> [paired deployment guide](deployment-phase4.md). Production defaults to OSV;
+> grading requires explicit `VULNERABILITY_SOURCE=fixture` plus the existing test
+> flags and actual disposable DB match. Earlier test counts/source choices below
+> are historical. Shared OpenAPI remains unchanged; proposed changes are separate.
+> The supplied exchange documents Team 2 replies, not finalized Team 6 sign-off.
+
 # Google Cloud Run and Cloud SQL deployment guide
+
+**November 1 superseding note:** use [the Phase 4 paired rollout](deployment-phase4.md)
+for this increment. Preserve both Cloud Run URLs, `cra_grading` domain data and
+`cra_autograder` reports. Never initialize retained `cra_phase3` with this revision.
+Below is historical Phase 3 setup; do not rerun it to recreate existing resources.
+Production Dependency-Track integration remains incomplete.
 
 **October 26 autograder extension:** use
 [the updated system + separate tester deployment guide](deployment-tester-google-cloud.md)

@@ -1,4 +1,4 @@
-"""Run the unchanged portable suite in a fresh, bounded subprocess."""
+"""Run the preserved Phase 3 and expanded Phase 4 suites in a bounded subprocess."""
 
 import datetime
 import json
@@ -10,6 +10,7 @@ import tempfile
 import threading
 import time
 import xml.etree.ElementTree as ET
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +18,10 @@ from http_evidence import redact_text
 
 from .config import TEAM2, HarnessError
 
-EXPECTED_TESTS = 157
+SUITE_FILES = ("cra-service/test_api.py", "cra-service/test_phase4_api.py")
+EXPECTED_TESTS = 353  # 157 original Phase 3 + 196 Phase 4 cases; checked against collection.
+EXPECTED_MODULE_COUNTS = {"test_api": 157, "test_phase4_api": 196}
+EXPECTED_PHASE4_AC_COUNTS = {"AC-04": 10, "AC-05": 11, "AC-06": 62, "AC-07": 113}
 CHILDREN: set[subprocess.Popen] = set()
 CHILD_LOCK = threading.Lock()
 
@@ -65,6 +69,9 @@ def empty_summary():
 
 
 def acceptance_id(name):
+    for number in range(4, 8):
+        if name.startswith(f"test_ac{number:02d}"):
+            return f"AC-{number:02d}"
     if name.startswith("test_ac02"):
         return "AC-02"
     if name.startswith("test_ac03"):
@@ -107,7 +114,7 @@ def parse_junit(path, returncode, expected_count=EXPECTED_TESTS):
                 title=name,
                 required=True,
                 passed=outcome == "pass",
-                expected="All original pytest assertions pass",
+                expected="All Phase 3 and Phase 4 pytest assertions pass",
                 actual=redact_text(detail)[:12000],
                 outcome=outcome,
                 duration_seconds=float(case.get("time", "0")),
@@ -118,15 +125,26 @@ def parse_junit(path, returncode, expected_count=EXPECTED_TESTS):
         required_passed=counts["passed"],
         required_failed=counts["failed"] + counts["errors"] + counts["skipped"],
     )
+    suite_problem = None
+    if expected_count == EXPECTED_TESTS:
+        modules = Counter(c["id"].partition("::")[0].rsplit(".", 1)[-1] for c in checks)
+        phase4_acs = Counter(c["ac"] for c in checks if c["ac"] in EXPECTED_PHASE4_AC_COUNTS)
+        if len({c["id"] for c in checks}) != len(checks):
+            suite_problem = "duplicate testcase identities"
+        elif modules != EXPECTED_MODULE_COUNTS or phase4_acs != EXPECTED_PHASE4_AC_COUNTS:
+            suite_problem = "required Phase 3/4 test files or acceptance groups are incomplete"
     error = None
     if (
         returncode not in {0, 1}
         or counts["errors"]
         or counts["skipped"]
         or len(checks) != expected_count
+        or suite_problem is not None
     ):
         result = "error"
         error = f"pytest exit {returncode}; expected {expected_count} cases; observed {len(checks)} (including setup/teardown records)"
+        if suite_problem:
+            error += "; " + suite_problem
     elif counts["failed"]:
         result = "fail"
     elif returncode == 0:
@@ -155,7 +173,7 @@ class Runner:
                 "-B",
                 "-m",
                 "pytest",
-                "cra-service/test_api.py",
+                *SUITE_FILES,
                 "-q",
                 "-p",
                 "no:cacheprovider",
@@ -216,11 +234,15 @@ class Runner:
             if evidence:
                 bundle = json.loads(evidence.read_text(encoding="utf-8"))
                 result["evidence"] = dict(run=bundle["run"], exchanges=bundle["exchanges"][:8])
-                examples: dict[str, Any] = {}
+                examples: dict[tuple[str, str], Any] = {}
                 for exchange in bundle["exchanges"]:
-                    examples.setdefault(exchange.get("test_id"), exchange)
+                    node_id = exchange.get("test_id") or ""
+                    file, _, name = node_id.partition("::")
+                    # Minimal Docker images and host pytest select different roots.
+                    examples[(file.replace("\\", "/").rsplit("/", 1)[-1], name)] = exchange
                 for check in result["checks"]:
-                    example = examples.get("cra-service/test_api.py::" + check["title"])
+                    module = check["id"].partition("::")[0].rsplit(".", 1)[-1]
+                    example = examples.get((module + ".py", check["title"]))
                     if example:
                         check["request"] = json.dumps(example["request"])[:3000]
                         check["response"] = json.dumps(

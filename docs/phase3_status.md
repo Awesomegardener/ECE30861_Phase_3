@@ -1,4 +1,28 @@
+> November 1 Phase 4 update: the current portable suite is **353** cases (157
+> original + 196 Phase 4). See [implementation/results](phase4-pod-update.md),
+> [OSV operations](osv-snapshots.md), [source ADR](adr-0001-osv-snapshots.md), and
+> [paired deployment guide](deployment-phase4.md). Production defaults to OSV;
+> grading requires explicit `VULNERABILITY_SOURCE=fixture` plus the existing test
+> flags and actual disposable DB match. Earlier test counts/source choices below
+> are historical. Shared OpenAPI remains unchanged; proposed changes are separate.
+> The supplied exchange documents Team 2 replies, not finalized Team 6 sign-off.
+
 # Phase 3 status
+
+## November 1 superseding status
+
+The final Phase 4 review reports 689 local tests passed; both HTTP roles ran
+311/311 with real evidence. Source integration and hosted/pod completion remain
+open. See [the final review](phase4-final-review.md), which supersedes the earlier
+684-test local snapshot. No new cloud revision or CI result is claimed.
+
+Phase 3 is preserved while Phase 4 is implemented locally on base `ad42a43`.
+The user reports both original Cloud Run roles deployed at that base, with a
+157/157 hosted run. The current 311-case HTTP suite includes the original 157
+unchanged plus 154 Phase 4 cases; it has no Phase 4 cloud deployment or CI run.
+Current requirements, limitations and actual local verification are in
+[the Phase 4 evidence draft](phase4-evidence-draft.md). Earlier dated entries
+below remain historical. Shared OpenAPI and Team 6 fixtures are unchanged.
 
 ## Current local autograder increment — October 26, 2026
 

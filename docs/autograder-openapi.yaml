@@ -7,7 +7,8 @@ info:
     ReleaseGate docs/openapi.yaml at 9c0b1917b6ed316d51b412685805bd8766b8edea.
     This is not an instructor-approved replacement for docs/openapi.yaml.
     Runs are synchronous, destructive, and may take up to 600 seconds.
-    All 157 existing pytest cases remain required; no assertions are weakened.
+    All 157 existing Phase 3 cases and 196 Phase 4 cases (353 total) are required;
+    no original assertions are weakened. The shared CRA contract is unchanged.
 paths:
   /test:
     get:
@@ -163,7 +164,7 @@ components:
       description: >-
         required_passed/failed and informational_passed/failed plus total, passed,
         failed, errors, skipped. All existing cases are required. Setup/teardown
-        errors are JUnit records, and may add records beyond the 157 test cases.
+        errors are JUnit records, and may add records beyond the 353 test cases.
     Check:
       type: object
       required: [id, ac, title, required, passed, expected, actual]

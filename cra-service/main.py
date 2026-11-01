@@ -10,6 +10,8 @@ import uuid
 from contextlib import asynccontextmanager, contextmanager
 from typing import Any, Literal
 
+import osv_source
+import phase4
 import psycopg2
 from autograder.api import install as install_autograder
 from autograder.config import GRADING_DATABASE, HarnessError
@@ -24,6 +26,7 @@ from pydantic import AwareDatetime, BaseModel, Field, StrictStr, field_validator
 from sbom_validation import InvalidSbom, validate_sbom
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from timestamps import validate_timestamp
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("cra.service")
@@ -205,6 +208,9 @@ def init_db(*, deadline: float | None = None):
         # Every revision uses the same transaction lock before inspecting or
         # creating schema objects. Commit/rollback releases it automatically.
         _startup_execute(cur, deadline, "SELECT pg_advisory_xact_lock(%s)", (SCHEMA_LOCK_KEY,))
+        _startup_execute(cur, deadline, "SELECT current_database() AS name")
+        if cur.fetchone()["name"] == "cra_phase3":
+            raise RuntimeError("Phase 4 must not initialize the retained cra_phase3 database")
         _startup_execute(
             cur,
             deadline,
@@ -236,6 +242,8 @@ def init_db(*, deadline: float | None = None):
             deadline,
             "CREATE TABLE IF NOT EXISTS test_clock (id INT PRIMARY KEY, now TIMESTAMP WITH TIME ZONE)",
         )
+        for statement in (*phase4.SCHEMA_STATEMENTS, *osv_source.SCHEMA_STATEMENTS):
+            _startup_execute(cur, deadline, statement)
         _startup_execute(
             cur,
             deadline,
@@ -335,14 +343,7 @@ class ClockUpdate(BaseModel):
     def validate_clock_string(cls, value):
         # OpenAPI date-time uses RFC 3339, not Pydantic's broader timestamp parser.
         # Calendar validity is still checked by AwareDatetime after this syntax gate.
-        pattern = (
-            r"[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt]"
-            r"(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\.[0-9]+)?"
-            r"(?:[Zz]|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])"
-        )
-        if not isinstance(value, str) or not re.fullmatch(pattern, value):
-            raise ValueError("now must be an RFC 3339 date-time string with a timezone")
-        return value
+        return validate_timestamp(value)
 
 
 class ReleaseResponse(BaseModel):
@@ -536,7 +537,9 @@ def get_components(releaseId: str):
 @app.post("/api/v1/test/reset", status_code=204)
 def test_reset():
     with database() as conn, conn.cursor() as cur:
+        phase4.require_reset_database(cur)
         cur.execute("TRUNCATE releases CASCADE")
+        phase4.reset_phase4(cur)
         cur.execute("DELETE FROM test_clock")
     return None
 
@@ -583,6 +586,7 @@ def autograder_reset(now, approved_database):
                 503, "RESET_DISABLED", "Database is not the approved disposable database"
             )
         cur.execute("TRUNCATE releases CASCADE")
+        phase4.reset_phase4(cur)
         cur.execute("DELETE FROM test_clock")
         if now is not None:
             cur.execute("INSERT INTO test_clock (id, now) VALUES (1, %s)", (now,))
@@ -596,6 +600,8 @@ def autograder_verify_database(approved_database):
                 503, "RESET_DISABLED", "Database is not the approved disposable database"
             )
 
+
+phase4.install(app, database, _current_time, ErrorResponse)
 
 install_autograder(
     app,

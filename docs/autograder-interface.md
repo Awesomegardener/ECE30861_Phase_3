@@ -1,3 +1,5 @@
+> Phase4 Q6.1 addition: see [phase4-cross-team-testing](phase4-cross-team-testing.md). Bidirectional target support is verified offline; actual public runs and live allowlist configuration remain pending authorization.
+
 # Team 2 HTTP autograder adapter
 
 This extension is independent Team 2 code. The provisional external reference is
@@ -7,7 +9,8 @@ read October 26, 2026. Only those two documentation files were consulted; no pee
 implementation, tests or database design was copied. This is compatibility
 evidence, **not documented instructor approval**. Our original CRA contract and
 Team 6 fixtures are unchanged. The new interface is specified separately in
-`autograder-openapi.yaml`; the Phase 4/5 domain APIs remain outside this increment.
+`autograder-openapi.yaml`. The November 1 Phase 4 extension adds the contract's
+CVE/incident operations and a second HTTP test file; Phase 5 remains deferred.
 
 ## Confirmed requirements and assumptions
 
@@ -24,11 +27,16 @@ structure. Both roles expose these paths. Confirm this protocol with staff.
 
 Intentional Team 2 choices:
 
-- All **157 unchanged pytest cases** are required. We do not adopt Team 6's smaller
+- All **157 unchanged Phase 3 cases plus 196 Phase 4 cases (353 total)** are required.
+  The runner checks expected collection count and reports AC-01 through AC-07.
+  We do not adopt Team 6's smaller
   suite, informational classifications, nested-component implementation or
   "under 30 seconds" performance promise. Historical hosted execution was about
   104 seconds; the subprocess budget is 600 seconds, HTTP deployment budget 900.
 - The target is an exact approved origin (optionally entered with `/api/v1`).
+  Tester defaults approve only Team 2's grading origin. Team 6 requires explicit
+  allowlist configuration during a coordinated reset window and removal afterward;
+  an existing environment override is not changed by deploying a new image.
   Credentials, arbitrary paths, query strings and fragments are rejected. Only
   operator-configured Team 2/Team 6 targets are allowed, plus explicitly configured
   loopback/container origins for isolated/self testing. No user-controlled shell
@@ -71,7 +79,7 @@ flowchart LR
   Staff --> T[Separate HTTP tester /test adapter]
   S --> M[(Shared report database and execution lock)]
   T --> M
-  S --> P[Fresh pytest subprocess: 157 original HTTP tests]
+  S --> P[Fresh pytest subprocess: 157 original plus 196 Phase 4 tests]
   T --> P
   P --> C[Explicitly approved disposable CRA target]
 ```
@@ -80,10 +88,11 @@ Both services use our `cra-service/autograder/` package. The system also serves 
 JSON homepage. Its adapter calls a separate, opt-in reset function; the original
 `/api/v1` routes retain their behavior. System setup verifies the connected
 database is `cra_grading`, then resets domain data and applies an optional clock in one SQL
-transaction. The domain schema is unchanged. Tester setup only selects a target;
+transaction. Phase 4 adds incident/submission/test-source tables; reset clears
+all domain test state. Tester setup only selects a target;
 run executes the existing suite, which resets that target before **every case**.
 
-A fresh `python -m pytest cra-service/test_api.py` subprocess writes JUnit and
+A fresh `python -m pytest cra-service/test_api.py cra-service/test_phase4_api.py` subprocess writes JUnit and
 bounded redacted HTTP evidence in a unique temporary directory. No assertions,
 fixtures or parameterizations are rewritten. Runs are sequential; the existing
 intentional concurrent SBOM replacement test still runs its own two requests.
@@ -96,8 +105,10 @@ Each check contains a JUnit ID/title, AC group, required/passed flags, expected 
 actual assertion outcome, and an HTTP example when available. AC grouping is a
 reporting aid; the original test names/assertions are authoritative. Summary
 counts expose passed/failed/errors/skipped and required/informational totals.
-Skipped/incomplete suites cannot pass. JUnit teardown errors can add extra
-records beyond the 157 collected cases. Reports retain per-test outcomes and
+Skipped/incomplete suites cannot pass. Count-correct XML with duplicate identities,
+wrong test-file counts or missing Phase 4 acceptance groups is also rejected as
+an error. JUnit teardown errors may add records beyond the 353 collected cases.
+Reports retain per-test outcomes and
 representative redacted request/response evidence; complete temporary log/XML/body
 files are removed after parsing, not retained as durable downloadable artifacts.
 

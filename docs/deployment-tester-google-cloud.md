@@ -1,4 +1,21 @@
+> November 1 Phase 4 update: the current portable suite is **353** cases (157
+> original + 196 Phase 4). See [implementation/results](phase4-pod-update.md),
+> [OSV operations](osv-snapshots.md), [source ADR](adr-0001-osv-snapshots.md), and
+> [paired deployment guide](deployment-phase4.md). Production defaults to OSV;
+> grading requires explicit `VULNERABILITY_SOURCE=fixture` plus the existing test
+> flags and actual disposable DB match. Earlier test counts/source choices below
+> are historical. Shared OpenAPI remains unchanged; proposed changes are separate.
+> The supplied exchange documents Team 2 replies, not finalized Team 6 sign-off.
+
 # Deploying the system adapter and separate tester (review before execution)
+
+**November 1 superseding note:** the user reports both roles already deployed
+at `ad42a43`, with isolated grading/report storage and a 157/157 hosted result.
+Do not recreate existing databases/users/services. For the new **311-case**
+Phase 4 suite, follow [the paired rollout](deployment-phase4.md), including
+system-only `VULNERABILITY_TEST_MODE=true` and
+`VULNERABILITY_TEST_DATABASE=cra_grading`. Below is historical first-deployment
+guidance; its October registry dates are past, not a new deadline.
 
 Nothing in these instructions has created cloud resources or deployed this change.
 Follow them only after code review, commit/push/build/deployment approval. Keep
@@ -225,15 +242,18 @@ Attach the existing Cloud SQL instance and allow unauthenticated ingress. Set:
 AUTOGRADER_ENABLED=true
 AUTOGRADER_ALLOW_RESET=true
 AUTOGRADER_DEFAULT_TARGET=https://cra-phase3-api-456725640364.us-central1.run.app
-AUTOGRADER_APPROVED_TARGETS=https://cra-phase3-api-456725640364.us-central1.run.app,http://136.116.160.182:8080
+AUTOGRADER_APPROVED_TARGETS=https://cra-phase3-api-456725640364.us-central1.run.app
 AUTOGRADER_RUN_TIMEOUT_SECONDS=600
 ```
 
 Reference `AUTOGRADER_DATABASE_URL` from the **same numeric metadata secret
 version/database** as the system. Do not set `DATABASE_URL` on the tester. The
-allowlist authorizes these origins; enable the tester only after verifying our
+allowlist authorizes this origin; enable the tester only after verifying our
 system's grading revision serves all traffic. Coordinate Team 6's destructive
-reset window before running against them. Do not add arbitrary URLs. The harness
+reset window before temporarily adding their origin and running against them;
+remove that origin afterward. Existing Cloud Run environment overrides must be
+reviewed explicitly; a new image does not remove an old peer allowlist entry.
+Do not add arbitrary URLs. The harness
 also guards transport in its pytest subprocess: every destination must match
 the selected origin and `/api/v1/` path, redirects are never followed (including
 same-origin redirects), and environment proxies are ignored. A redirect produces
@@ -265,7 +285,7 @@ Before destructive verification, confirm `cra_grading` really is disposable and
 coordinate an exclusive window. GET both `/`, `/test`, `/health/ready`; check role
 and `enabled: true`. For each role POST `/test/setup` (save the ID), POST `/test/run`
 with `{"session_id":"SAVED_ID"}`, then GET `/test/report?session_id=SAVED_ID`.
-Save actual outcomes, 157 test records, timestamps, image digest, runner SHA,
+Save actual outcomes, 311 test records after the Phase 4 upgrade, timestamps, image digest, runner SHA,
 Cloud Run revision, logs and target URL. Check unknown IDs and unapproved targets.
 Restart/revise only the tester and confirm a completed report still exists.
 Do not claim hosted verification from local tests. A `fail` report is real test

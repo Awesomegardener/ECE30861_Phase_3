@@ -74,7 +74,8 @@ class Settings:
     @classmethod
     def environment(cls, role):
         default_target = system_target() if role == "system" else TEAM2
-        default_approved = default_target if role == "system" else f"{TEAM2},{TEAM6}"
+        # Peer reset authorization must be explicit and limited to a coordinated window.
+        default_approved = default_target
         timeout = int(os.getenv("AUTOGRADER_RUN_TIMEOUT_SECONDS", "600"))
         if not 1 <= timeout <= 1800:
             raise ValueError("AUTOGRADER_RUN_TIMEOUT_SECONDS must be between 1 and 1800")

@@ -22,12 +22,33 @@ services:
       - "127.0.0.1:${HARNESS_SYSTEM_PORT:-18086}:8080"
     environment:
       DATABASE_URL: postgresql://cra_grading_app:local_grading_only@db:5432/cra_grading
+      VULNERABILITY_TEST_MODE: "true"
+      VULNERABILITY_SOURCE: fixture
+      VULNERABILITY_TEST_DATABASE: cra_grading
       AUTOGRADER_DATABASE_URL: postgresql://cra_harness:local_report_only@db:5432/cra_autograder
       AUTOGRADER_ENABLED: "true"
       AUTOGRADER_ALLOW_RESET: "true"
       AUTOGRADER_APPROVED_TARGETS: http://127.0.0.1:8080
       AUTOGRADER_RESET_DATABASE: cra_grading
       AUTOGRADER_RUN_TIMEOUT_SECONDS: "600"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/ready',timeout=3)"]
+      interval: 2s
+      timeout: 4s
+      retries: 30
+  osv:
+    build:
+      context: ..
+      dockerfile: cra-service/Dockerfile
+    ports:
+      - "127.0.0.1:${HARNESS_OSV_PORT:-18094}:8080"
+    environment:
+      DATABASE_URL: postgresql://cra_osv_app:local_osv_only@db:5432/cra_osv
+      VULNERABILITY_SOURCE: osv
+      OSV_SNAPSHOT_MAX_AGE_SECONDS: "604800"
     depends_on:
       db:
         condition: service_healthy

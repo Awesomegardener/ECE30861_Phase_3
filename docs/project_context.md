@@ -1,8 +1,49 @@
+> November 1 Phase 4 update: the current portable suite is **353** cases (157
+> original + 196 Phase 4). See [implementation/results](phase4-pod-update.md),
+> [OSV operations](osv-snapshots.md), [source ADR](adr-0001-osv-snapshots.md), and
+> [paired deployment guide](deployment-phase4.md). Production defaults to OSV;
+> grading requires explicit `VULNERABILITY_SOURCE=fixture` plus the existing test
+> flags and actual disposable DB match. Earlier test counts/source choices below
+> are historical. Shared OpenAPI remains unchanged; proposed changes are separate.
+> The supplied exchange documents Team 2 replies, not finalized Team 6 sign-off.
+
 # ECE 30861 CRA Project — Context for Codex
 
+## Current Phase 4 handoff — November 1, 2026 (supersedes historical scope)
+
+Final review supersedes the initial verification below: 689 local tests, eight
+HTTP adapter checks, both 311-case children, five runtime checks (twice), six
+storage checks and existing deployment/startup/race/rollback regressions passed.
+The parser now checks required files/AC counts and duplicate IDs; peers require
+explicit reset authorization. See `phase4-final-review.md` for actual commands,
+remaining source/pod gaps and Git status, and `dependency-track-integration-plan.md`
+for the unimplemented production integration proposal. No cloud change occurred.
+
+User authorized local REQ-03/04 CVE/fault-injection and REQ-05/06 incident/deadline
+implementation, keeping Phase 5 deferred. Base `main` is `ad42a43`; the user
+reports both Cloud Run roles deployed at that SHA, with 157/157 HTTP tests.
+The new uncommitted local suite is 311 HTTP cases, preserving all 157 originals.
+See `phase4-implementation.md`, `phase4-evidence-draft.md`, `models.md` and
+`deployment-phase4.md`. The shared OpenAPI and Team 6 fixtures remain unchanged.
+
+Production Dependency-Track infrastructure/key/project mapping is absent;
+deterministic matching uses only the contract's opt-in test-source endpoint.
+Source operations require `VULNERABILITY_TEST_MODE=true` and the actual named
+disposable `VULNERABILITY_TEST_DATABASE` (cra_grading or isolated cra_test).
+Disabled/unconfigured sources return 503. Never point the new revision at retained
+`cra_phase3`: startup refuses before DDL. Additive incident/submission/source
+tables are initialized under the existing transaction schema lock. No cloud DB
+or existing local volume has been reset/migrated by this work.
+
+Missing final anchor follows Phase 2's not_applicable example. Duplicate stage
+submissions retain every occurrence and use the earliest time; anchorless filing,
+source-update semantics and the actual shared Phase 4 dataset need Team 6
+confirmation as documented in `decisions.md`. No approval of those choices is
+claimed. No Phase 4 commit, push, remote CI or deployment is authorized yet.
+
 **Handoff date:** October 17, 2026; current implementation update October 18, 2026
-**Repository:** https://github.com/Awesomegardener/ECE30861_Phase_3  
-**Current emphasis:** Phase 3 milestone (first functioning deployed increment).  
+**Repository:** https://github.com/Awesomegardener/ECE30861_Phase_3
+**Current emphasis:** Phase 3 milestone (first functioning deployed increment).
 **Status disclaimer:** Sections describing the October 17 snapshot are historical.
 Current local verification is summarized below and in `testing.md`; it does not
 establish public availability or cross-team execution. Verify the current
@@ -95,7 +136,7 @@ The deployment guide corrects SQL role/schema privileges and rollout order.
 ## 1. Product and regulatory context
 The EU **Cyber Resilience Act** (Regulation (EU) 2024/2847) imposes cybersecurity and vulnerability-management duties for products with digital elements. The selected project assists manufacturer product security engineers and compliance staff. The pod combined two Phase 1 ideas: release-indexed Software Bill of Materials (SBOM) inventory/vulnerability lookup and internal incident/report-deadline tracking. Its purpose is to track which supported shipped releases contain vulnerable software components and preserve evidence needed for reporting; **humans decide whether an issue is legally reportable, approve and submit regulatory reports, and perform remediation**.
 
-Authoritative regulation: https://eur-lex.europa.eu/eli/reg/2024/2847/oj  
+Authoritative regulation: https://eur-lex.europa.eu/eli/reg/2024/2847/oj
 The project focuses on CRA Article 13 / Annex I Part II and Article 14. The student system is compliance *support*, not an automated determination of legal compliance.
 
 ## 2. Pod agreement and specification
@@ -134,7 +175,7 @@ Future AC-04–AC-10 test CVE lookup accuracy/error paths, incident validation/d
 - **Demonstration:** deploy to a network-accessible host, register a release, upload and persist the pod's shared SBOM.
 - **Automated validation:** AC-01, AC-02, AC-03.
 
-Phase 4: CVE affected-release lookup, simulated vulnerability-source failures, incident cases, deadline math (AC-04–07).  
+Phase 4: CVE affected-release lookup, simulated vulnerability-source failures, incident cases, deadline math (AC-04–07).
 Phase 5: stage reports, immutable audit logging, persistence proof, final cross-team suite (AC-08–10).
 
 ## 5. Common HTTP contract essentials (check exact OpenAPI)
@@ -159,7 +200,7 @@ Available Phase 2 examples include these operations:
 These are a **handoff summary, not a replacement for OpenAPI**. Validate required schemas, success codes, errors, paths, and test reset/clock semantics from the shared contract. Phase 2 specifies test operations for repeatability and no authentication for the common test interface; mutation attribution uses `X-User-Id` but is not itself authentication.
 
 ## 6. Historical October 17 repository snapshot (superseded by section 0)
-Repository: https://github.com/Awesomegardener/ECE30861_Phase_3  
+Repository: https://github.com/Awesomegardener/ECE30861_Phase_3
 Reviewed uploaded commit: `99147b3bf9e2f1c02f54bd017a126b66e776fef3` on `main` (October 17, 2026). Clone/fetch before making assumptions.
 
 Files observed:
