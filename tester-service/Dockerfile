@@ -4,6 +4,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 COPY cra-service/requirements.txt cra-service/requirements-harness.txt ./cra-service/
 RUN pip install --no-cache-dir -r cra-service/requirements-harness.txt
 COPY cra-service/test_api.py cra-service/conftest.py cra-service/http_evidence.py ./cra-service/
+COPY cra-service/test_phase4_api.py ./cra-service/
 COPY cra-service/autograder/ ./cra-service/autograder/
 COPY docs/openapi.yaml ./docs/openapi.yaml
 COPY fixtures/ ./fixtures/

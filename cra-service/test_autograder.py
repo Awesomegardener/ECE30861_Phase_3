@@ -47,6 +47,8 @@ def test_adapter_reset_and_clock_use_one_transaction(adapter_database):
     assert [query for query, _ in adapter_database] == [
         "SELECT current_database() AS name",
         "TRUNCATE releases CASCADE",
+        "TRUNCATE incidents CASCADE",
+        "INSERT INTO test_vulnerability_source (id,mode,records) VALUES (1,'available','[]'::jsonb) ON CONFLICT(id) DO UPDATE SET mode='available',records='[]'::jsonb",
         "DELETE FROM test_clock",
         "INSERT INTO test_clock (id, now) VALUES (1, %s)",
     ]

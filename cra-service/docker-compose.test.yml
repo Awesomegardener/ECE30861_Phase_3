@@ -24,6 +24,9 @@ services:
     environment:
       DATABASE_URL: postgresql://cra_test:local_test_only@db:5432/cra_test
       DB_STARTUP_ATTEMPTS: "30"
+      VULNERABILITY_TEST_MODE: "true"
+      VULNERABILITY_SOURCE: fixture
+      VULNERABILITY_TEST_DATABASE: cra_test
     depends_on:
       db:
         condition: service_healthy

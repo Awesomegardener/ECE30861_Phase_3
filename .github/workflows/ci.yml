@@ -1,4 +1,4 @@
-name: Phase 3 checks
+name: CRA Phase 3 and 4 checks
 
 on: [push, pull_request, workflow_dispatch]
 
@@ -73,6 +73,8 @@ jobs:
       - name: Real HTTP suites, concurrency, persistence and timeout checks
         run: |
           python -m pytest tester-service/tests/test_http.py -q --junitxml=artifacts/autograder/http-results.xml
+          python scripts/check_phase4_runtime.py --project "$COMPOSE_PROJECT_NAME" --evidence-dir artifacts/autograder
+          python scripts/check_osv_runtime.py --project "$COMPOSE_PROJECT_NAME" --evidence-dir artifacts/autograder
           python scripts/check_autograder_runtime.py --project "$COMPOSE_PROJECT_NAME"
       - name: Capture adapter logs
         if: always()

@@ -20,6 +20,9 @@ def main():
     args = parser.parse_args()
     spec = yaml.safe_load((ROOT / "docs/openapi.yaml").read_text(encoding="utf-8"))
     validate_spec(spec)
+    proposed = ROOT / "docs/openapi.phase4-proposed.yaml"
+    if proposed.exists():
+        validate_spec(yaml.safe_load(proposed.read_text(encoding="utf8")))
     sys.path.insert(0, str(ROOT / "cra-service"))
     from sbom_validation import validate_sbom
 
@@ -32,19 +35,26 @@ def main():
         if line and not line.startswith("#")
     )
     assert len(components) == 25 and len(pairs) == 25 and pairs == locked
-    source = ast.parse((ROOT / "cra-service/main.py").read_text(encoding="utf-8-sig"))
+    source = ast.parse(
+        (ROOT / "cra-service/main.py").read_text(encoding="utf-8-sig")
+        + "\n"
+        + (ROOT / "cra-service/phase4.py").read_text(encoding="utf-8")
+    )
     methods = {"get", "post", "put", "patch", "delete"}
     implemented = set()
-    for node in source.body:
+    for node in ast.walk(source):
         for decorator in getattr(node, "decorator_list", []):
             if (
                 isinstance(decorator, ast.Call)
                 and isinstance(decorator.func, ast.Attribute)
                 and isinstance(decorator.func.value, ast.Name)
-                and decorator.func.value.id == "app"
+                and decorator.func.value.id in {"app", "router"}
                 and decorator.func.attr in methods
             ):
-                implemented.add((decorator.func.attr, decorator.args[0].value))
+                route = decorator.args[0].value
+                if decorator.func.value.id == "router":
+                    route = "/api/v1" + route
+                implemented.add((decorator.func.attr, route))
     artifact_dir = args.evidence_dir
     artifact_dir.mkdir(parents=True, exist_ok=True)
     observations_file = artifact_dir / "operation-observations.json"

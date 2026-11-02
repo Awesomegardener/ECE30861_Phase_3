@@ -4,6 +4,7 @@ import argparse
 import json
 import re
 import subprocess
+import sys
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -12,6 +13,9 @@ from pathlib import Path
 import requests
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "cra-service"))
+from autograder.runner import EXPECTED_TESTS  # noqa: E402
+
 COMPOSE = ROOT / "tester-service/docker-compose.test.yml"
 
 
@@ -108,7 +112,7 @@ def main():
 
     # Reuse actual saved complete result from the HTTP integration tests.
     report = json.loads((args.evidence_dir / "tester-report.json").read_text())
-    assert report["result"] == "pass" and report["summary"]["passed"] == 157
+    assert report["result"] == "pass" and report["summary"]["passed"] == EXPECTED_TESTS
     route = "/test/report?session_id=" + report["session_id"]
     before = call(base, "GET", route)
     api_id = compose("ps", "-q", "api")

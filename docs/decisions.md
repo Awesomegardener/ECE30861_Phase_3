@@ -1,4 +1,69 @@
-# Phase 3 implementation decisions and open pod questions
+## Phase 4 pod proposals adopted locally ? November 1, 2026
+
+Authority: user-supplied Team 6 questions, Team 2 replies, and explicit user
+implementation instruction. These support local implementation; finalized Team6
+approval, reviewer sign-off and instructor acceptance of the OSV architectural
+change have not been supplied. Original shared OpenAPI is unchanged. Review the
+separate `openapi.phase4-proposed.yaml` before finalizing shared behavior.
+
+- Aware Z/offset timestamps, microseconds, UTC Z output; naive400.
+- Deadline equality pending/unsubmitted and met/submitted; late remains overdue.
+- Duplicate stage409 CONFLICT (new proposed shared response), N/A submission400.
+- Before-awareness submitted/fix400; future allowed; replacement fix allowed;
+  voluntary fix stored without applicable deadlines. No complete audit history.
+- Malformed CVE400 INVALID_REQUEST; incident CVE is format-only, source-independent.
+- Fixture PURLs ignore qualifiers/subpaths with exact versions; missing PURL cannot match.
+- Reset only disposable DB, available/empty fixtures; each PUT completely replaces.
+- AC04 set equality, 100% precision/recall; reviewer names/dates/sign-off pending.
+- OSV replaces planned Dependency-Track locally: real raw ingestion/provenance/
+  freshness, bounded version matching and explicit failures. No REQ/AC reduction.
+  No Phase4 push alerts. See `adr-0001-osv-snapshots.md` for remaining approval/limits.
+
+Earlier dated decisions below are retained for history and are superseded where
+these policies differ.
+
+> November 1 Phase 4 update: the current portable suite is **353** cases (157
+> original + 196 Phase 4). See [implementation/results](phase4-pod-update.md),
+> [OSV operations](osv-snapshots.md), [source ADR](adr-0001-osv-snapshots.md), and
+> [paired deployment guide](deployment-phase4.md). Production defaults to OSV;
+> grading requires explicit `VULNERABILITY_SOURCE=fixture` plus the existing test
+> flags and actual disposable DB match. Earlier test counts/source choices below
+> are historical. Shared OpenAPI remains unchanged; proposed changes are separate.
+> The supplied exchange documents Team 2 replies, not finalized Team 6 sign-off.
+
+# CRA implementation decisions and open pod questions
+
+## Phase 4 decisions — November 1, 2026
+
+Final review adds no pod approval or contract change. It fixes count-only JUnit
+certification, strengthens the existing 154 HTTP tests, limits default tester
+authorization to Team 2, and clarifies that tagged revisions share domain data.
+Production Dependency-Track is still absent: the shared interface permits
+independent sources, but completing the team's selected Phase 2 architecture
+requires integration or a documented approved plan revision. Proposed work and
+costs are in `dependency-track-integration-plan.md`; no resource was created.
+
+User authorized REQ-03 through REQ-06 implementation and local tests, preserving
+the shared contract. This supersedes the earlier Phase 3 scope boundary only.
+No additional Team 6/instructor agreement is documented by this authorization.
+
+| Topic | Current implementation and source | Agreement still needed |
+|---|---|---|
+| Vulnerability source | Deterministic test endpoint from shared contract; exact affected-PURL matching. Production lookup fails explicit 503; Dependency-Track is not integrated. | Provision planned Dependency-Track and credentials/synchronization, or explicitly agree a design revision; do not claim the fallback production source exists. |
+| Phase 4 dataset | Synthetic five-CVE manifest in new tests, separate from protected shared fixtures. | Obtain and jointly validate pod CVE/incident ground truth; local 100% scores are not shared-dataset evidence. |
+| Clock input | Strict RFC 3339 offsets accepted, all outputs UTC Z; shared OpenAPI format takes precedence over Phase 2's Z-only input prose. | Confirm both teams' timestamp parsers; shared YAML unchanged. |
+| Missing final anchor | Null final deadline, `not_applicable` until fix supplied, following Phase 2 section 5.2 example (PDF page 15). Voluntary stages also not_applicable. | Confirm anchorless submission behavior, which the examples do not cover. |
+| Duplicate submissions | Retain all rows/actors; earliest timestamp determines status. A late filing stays overdue; new late duplicate cannot erase an on-time filing. | Contract does not prescribe duplicate policy; Team 2 local interpretation, not pod agreement. |
+| Timeline corrections | PATCH may replace fix availability; no inferred awareness or extra chronology constraints. Final submissions can be stored before a fix anchor, with status not_applicable until anchored. | Pod should settle chronology restrictions and corrections before cross-testing. |
+| Source updates | Omitted records preserve data on mode-only change; explicit empty array clears; duplicate CVE records union their PURLs. Reset clears fixture state. | Optional records/duplicate semantics are unspecified; share these local choices. |
+| Negative input responses | Test source: invalid body 400 Error, disabled/wrong DB 503 Error. Query identifiers violating the declared CVE pattern: 400 INVALID_REQUEST. | Source operation only enumerates 200 and query omits 400; document/agree negative responses before changing YAML. |
+| Input text/CVE constraints | Preserve rationale, reject whitespace-only text. Incident CVE strings have no additional pattern constraint, matching YAML. Query valid identifiers as in YAML. | Phase 2 prose requires nonempty product/version and CVE shape more narrowly than YAML; no Phase 3 validation semantics changed here. |
+| Deployment | Preserve existing Cloud Run roles/URLs and separate grading/report DBs; startup refuses retained cra_phase3 before DDL. | Cloud rollout and hosted acceptance require explicit user approval. |
+
+The assignment PDF's Q1.2 still asks about Phase 3/section 6.1 and Q7.3 calls
+Phase 4 the next milestone. The evidence draft addresses those literal prompts
+and the current Phase 4/section 6.2 delivery; ask staff about template wording.
+No shared scope was reduced, and no external source integration was fabricated.
 
 The shared `openapi.yaml` and `fixtures/` are unchanged. Contract version remains
 1.0.0. Implementation authorization and mutual pod approval are separate facts.

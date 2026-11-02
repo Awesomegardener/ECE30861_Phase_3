@@ -1,8 +1,64 @@
-# ECE 30861 — Phase 3 CRA service
+> Current Phase 4 pod update: 353 portable HTTP cases (157 original + 196 Phase 4), local OSV snapshot source and proposed contract changes. See [review/results](docs/phase4-pod-update.md), [source operations](docs/osv-snapshots.md) and [ADR](docs/adr-0001-osv-snapshots.md). No Phase 4 deployment is claimed.
+
+# ECE 30861 — CRA Phase 3 and Phase 4 service
 
 FastAPI + PostgreSQL + Docker release registration and CycloneDX JSON component
-ingestion. The authoritative interface is [`docs/openapi.yaml`](docs/openapi.yaml);
-it and [`fixtures/`](fixtures/) are unchanged. No Phase 4/5 features are implemented.
+ingestion, deterministic CVE matching and persistent incident/deadline tracking.
+The authoritative interface is [`docs/openapi.yaml`](docs/openapi.yaml);
+it and [`fixtures/`](fixtures/) are unchanged. Phase 5 reports/audit remain deferred.
+
+## Current Phase 4 local increment — November 1, 2026
+
+The [current readiness review](docs/phase4-pod-update.md) records this update.
+The [OSV architectural decision](docs/adr-0001-osv-snapshots.md) supersedes the
+unimplemented Dependency-Track plan. Real local OSV ingestion/matching exists;
+full-feed coverage, operational refresh and hosted verification remain incomplete.
+
+[Implementation, limitations and API semantics](docs/phase4-implementation.md),
+[paired deployment procedure](docs/deployment-phase4.md),
+[models](docs/models.md) and [submission evidence draft](docs/phase4-evidence-draft.md).
+The user reports the existing system/tester deployed at `ad42a43` with 157/157 tests;
+the new code has **not** been committed, run in remote CI or deployed.
+The hosted runner now packages **353 HTTP cases**: the unchanged original 157
+plus 196 Phase 4 cases. OSV is the default production source; the separate
+fixture source runs only in explicitly enabled disposable databases.
+
+New API examples, after selecting an authorized disposable target and setting
+`VULNERABILITY_SOURCE=fixture`, `VULNERABILITY_TEST_MODE=true`, and
+`VULNERABILITY_TEST_DATABASE=cra_grading` on the system:
+
+```http
+PUT /api/v1/test/vulnerability-source
+Content-Type: application/json
+
+{"mode":"available","records":[{"cve_id":"CVE-2026-12345","affected_purls":["pkg:generic/example@1"]}]}
+
+GET /api/v1/vulnerabilities/CVE-2026-12345/affected-releases
+
+POST /api/v1/incidents
+Content-Type: application/json
+X-User-Id: engineer-17
+
+{"awareness_at":"2026-11-01T00:00:00Z","classification":"mandatory","rationale":"Confirmed exploitation","cve_id":"CVE-2026-12345"}
+
+PATCH /api/v1/incidents/RETURNED_INCIDENT_ID
+Content-Type: application/json
+X-User-Id: engineer-17
+
+{"fix_available_at":"2026-11-03T00:00:00Z"}
+
+POST /api/v1/incidents/RETURNED_INCIDENT_ID/submissions
+Content-Type: application/json
+X-User-Id: engineer-17
+
+{"stage":"early_warning","submitted_at":"2026-11-02T00:00:00Z"}
+
+GET /api/v1/incidents/RETURNED_INCIDENT_ID
+```
+
+The original retained `cra_phase3` DB must never be used for this revision;
+startup refuses it before DDL. Local development uses the existing Compose setup
+with its original DB/volume; run destructive tests only in a separate fresh stack.
 
 ## Start the application
 
@@ -32,10 +88,10 @@ Operational health: `/health/live` returns 200 without querying PostgreSQL;
 the database is unavailable. Both omit shared API schemas. Docker uses `PORT`
 when provided and defaults to 8080; the existing Compose mappings stay unchanged.
 
-## HTTP autograder services (October 26 local increment)
+## HTTP autograder services (October 26 history; extended in Phase 4)
 
 Both system and separate `tester-service/` expose discovery, setup, synchronous
-run and report at `/test*`. They run our unchanged 157-case pytest suite and
+run and report at `/test*`. They now run both portable pytest files (353 cases) and
 persist real per-test outcomes in PostgreSQL, with a shared execution lock.
 Controls default disabled and require explicit disposable-target authorization.
 System self-tests are restricted to loopback at `PORT`, and adapter resets to
@@ -43,8 +99,8 @@ the dedicated `cra_grading` database. Harness subprocesses block redirects and
 unapproved destinations. Our public target must advertise guarded reset readiness
 before the tester launches destructive checks. The local harness stack uses
 separate grading/report databases and ordinary roles in a new isolated volume.
-No new tester is deployed yet; the existing public system has not been updated
-by this local increment. The GitHub Python blob is not a tester service URL.
+Both existing URLs are reported deployed by the user. This Phase 4 increment has
+not updated either public service. The GitHub Python blob is not a tester URL.
 
 - [Protocol, safety boundaries and local HTTP verification](docs/autograder-interface.md)
 - [Separate provisional HTTP contract](docs/autograder-openapi.yaml)
@@ -53,7 +109,7 @@ by this local increment. The GitHub Python blob is not a tester service URL.
 Both Dockerfiles now build from the repository root, for example
 `docker build -f cra-service/Dockerfile .`; existing Compose commands still work.
 CRA database settings, ports and persistent volume names are preserved. The
-extension does not replace our shared specification or implement later phases.
+extension does not replace our shared specification. Phase 5 remains deferred.
 
 ## Run tests without clearing application data
 

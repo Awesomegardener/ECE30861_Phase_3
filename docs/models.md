@@ -1,7 +1,119 @@
-# Implemented Phase 3 models
+# Implemented CRA models: Phase 4 local increment
 
-These models describe actual components. Dependency-Track, incident management,
-reports and audit storage are absent from this increment.
+November 1, 2026. Local code, not proof of deployment. [Source ADR](adr-0001-osv-snapshots.md).
+
+## Architecture
+
+```mermaid
+flowchart LR
+ U[Engineer or approved tester] --> A[FastAPI CRA API]
+ O[Official OSV HTTPS data] --> F[Operator fetch and review]
+ F --> I[Validated CLI atomic import]
+ I --> D[(Domain DB: raw OSV generations and inventory)]
+ A --> D
+ A --> C[UTC deadline calculations on read]
+ H[System HTTP adapter] --> P[Guarded pytest: 353 cases]
+ T[Separate tester adapter] --> P
+ P -->|Approved grading origin only| A
+ H --> R[(Separate report DB and execution lock)]
+ T --> R
+```
+
+Grading explicitly selects fixture source on disposable cra_grading/cra_test;
+production defaults to OSV. They are separate modes, never silent fallbacks.
+No external network call occurs during matching. No push alerts or complete audit.
+
+## Additive persistence
+
+```mermaid
+erDiagram
+ INCIDENTS ||--o{ INCIDENT_SUBMISSIONS : records
+ INCIDENTS {
+  text incident_id PK
+  text cve_id "nullable format-only validation"
+  timestamptz awareness_at
+  text classification
+  text rationale
+  timestamptz fix_available_at "nullable replaceable"
+  text created_by
+  text updated_by
+  timestamptz created_at
+  timestamptz updated_at
+ }
+ INCIDENT_SUBMISSIONS {
+  text submission_id PK
+  text incident_id FK
+  text stage
+  timestamptz submitted_at
+  text recorded_by
+  timestamptz recorded_at
+ }
+ OSV_SNAPSHOTS ||--o{ OSV_RECORDS : contains
+ OSV_RECORDS ||--o{ OSV_CVES : aliases
+ OSV_SNAPSHOTS ||--o| OSV_ACTIVE : selected
+ OSV_SNAPSHOTS {
+  text snapshot_id PK
+  text source_url
+  text scope
+  text content_sha256
+  text upstream_sha256
+  text schema_sha256
+  timestamptz fetched_at
+  timestamptz imported_at
+  integer record_count
+ }
+ OSV_RECORDS {
+  text snapshot_id PK,FK
+  text record_id PK
+  jsonb document
+ }
+ OSV_CVES {
+  text snapshot_id PK,FK
+  text cve_id PK
+  text record_id PK,FK
+ }
+ OSV_ACTIVE {
+  integer id PK
+  text snapshot_id FK
+ }
+ TEST_VULNERABILITY_SOURCE {
+  integer id PK
+  text mode
+  jsonb records
+ }
+```
+
+Rows/generations are additive; no snapshot deletion on grading reset. Incident
+row locks enforce single new submission per stage without deleting legacy rows.
+Statuses are derived, not persisted. Mutable attribution is not audit history.
+
+## Query and deadline behavior
+
+```mermaid
+flowchart TD
+ Q[Validate CVE format] --> S{Configured source}
+ S -->|fixture and grading guards| F[Read replacement fixture dataset]
+ S -->|osv| O[Read active provenance and wall-clock freshness]
+ O -->|missing stale unsupported or storage failure| E[503 explicit source unavailable]
+ O --> K{CVE or alias known?}
+ F --> K
+ K -->|No| N[404 CVE_UNKNOWN]
+ K -->|Yes| M[Versioned package match against inventory]
+ M --> G[200 supported and unsupported sets by UTC support date]
+```
+
+Fixture PURLs enumerate exact versions ignoring qualifiers/subpaths. OSV explicit
+versions/SEMVER/PyPI ranges apply upstream semantics; unsupported comparisons
+fail503. Known but unaffected returns empty200. Both sources preserve stored fields.
+
+Mandatory early/notification deadlines are awareness+24h/+72h. Final is fix+14d
+or N/A before a fix. Voluntary stays N/A even with a stored fix. Submission <=due
+is met, >due overdue; no submission stays pending through equality. Before-awareness
+mutations400, N/A submissions400, duplicates409. Fix replacement recalculates
+final status. Existing historical duplicate rows use earliest time, with no rewrite.
+The shared YAML proposal is separate and awaits review.
+
+## Historical Phase 3 model notes and unchanged release/SBOM views
 
 The October 26 adapter adds a separate `tester-service` FastAPI process and a
 shared Team 2 harness package. Both role adapters launch the unchanged HTTP pytest

@@ -1,4 +1,19 @@
+> November 1 Phase 4 update: the current portable suite is **353** cases (157
+> original + 196 Phase 4). See [implementation/results](phase4-pod-update.md),
+> [OSV operations](osv-snapshots.md), [source ADR](adr-0001-osv-snapshots.md), and
+> [paired deployment guide](deployment-phase4.md). Production defaults to OSV;
+> grading requires explicit `VULNERABILITY_SOURCE=fixture` plus the existing test
+> flags and actual disposable DB match. Earlier test counts/source choices below
+> are historical. Shared OpenAPI remains unchanged; proposed changes are separate.
+> The supplied exchange documents Team 2 replies, not finalized Team 6 sign-off.
+
 # Phase 3 verification record
+
+**Latest verification:** [Phase 4 final review](phase4-final-review.md), November
+1, 2026: 689 tests, eight real adapter checks, both 311-case children, five runtime
+checks twice and six storage checks passed. The dated 684-test entry below is the
+prior snapshot. Full exact commands/evidence paths are in that final review;
+no Phase 4 remote CI or deployed/cross-team execution is claimed.
 
 This is a chronological record. Statements about uncommitted code or missing CI
 in earlier entries describe that stage; current CI and policy/test results are
@@ -787,3 +802,74 @@ roles/secrets, switch the system to its disposable grading DB, validate deployed
 readiness and run acceptance in an exclusive window. GitHub Actions must run
 after an approved push. Direct legacy resets and independent peer testers still
 require coordination; the cooperative mutex does not fence those clients.
+
+## Phase 4 local verification — November 1, 2026
+
+Base `ad42a43` plus uncommitted local changes; no Phase 4 remote CI/deployment.
+The user reports the existing deployed pair at that base and 157/157 hosted
+tests. New final local results below do not claim hosted or Team 6 verification.
+All old pytest assertions/fixtures remain unchanged. Shared inputs and original
+`test_api.py`/`conftest.py` have no Git diff.
+
+- Pre-edit baseline: **232 non-destructive cases passed**.
+- Final complete local suite: **684 passed**, no failures/errors/skips, 53.68 s.
+  This is 311 HTTP (157 original + 154 new) and 373 non-destructive tests.
+  New HTTP coverage: AC-04 6, AC-05 10, AC-06 55, AC-07 83 cases.
+- HTTP adapters: **8 passed**, 151.22 s. System and tester each actually executed
+  311/311; every check has an attached real request/response example. Original
+  root-prefix evidence mismatch was found through these reports and corrected.
+  Deliberately broken/redirect targets produce real fail/error reports; the
+  redirect sentinel still receives zero destructive requests.
+- **5** Phase 4 runtime checks passed (restart durability, SQL rollback, concurrent
+  stage records/attribution, unsafe source config refusal, long-PURL matching).
+- **6** existing adapter runtime/storage checks passed (permissions/isolation,
+  report persistence, hard-kill recovery, real timeout and unsafe DB rejection).
+- Existing real deployment checks passed: PORT 8080/9090, invalid PORT, DB outage
+  health/recovery, cold-start DB retry, API/DB restart persistence and graceful
+  shutdown. Six schema/startup checks and two release/reset-race cases passed.
+- Existing SBOM rollback initially failed due to a mismatched test command (SQL
+  trigger DB differed from the HTTP API DB). Correct matching fresh stack passed:
+  25 prior components retained, sanitized 500, no idle transactions. This was a
+  test-environment error, not an application fix; failed attempt disclosed in
+  `phase4-evidence-draft.md`.
+- Ruff lint/format passed (38 Python files), mypy passed (11 production files),
+  both OpenAPI documents validated and protected 25-package fixture check passed.
+  Both Docker builds passed. Git whitespace and final preservation checks are
+  recorded in the final evidence draft. One pre-existing dateutil deprecation
+  warning appears on host Python 3.12; container Python is 3.11.
+
+Final fresh stack: `cra-phase3-autograder-phase4-20261101-02`, system 18116,
+tester 18117, sentinel 18122. Earlier session-only project `...-01` is stopped
+and retained; the second project verifies final schema from an empty volume.
+The existing deployment script uses a third new project,
+`cra-phase3-deployment-phase4-20261101`, port 18126. No previous project/volume
+was reused or deleted. Do not rerun these resets against old stacks/public URLs.
+
+Exact final test commands (PowerShell, repository root):
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 -B -m pytest cra-service tester-service/tests --ignore=tester-service/tests/test_http.py --allow-reset --base-url http://127.0.0.1:18116 --capture-http-bodies --evidence-dir artifacts/phase4-review/final --junitxml artifacts/phase4-review/final.xml --basetemp artifacts/phase4-review/final-02-tmp -p no:cacheprovider -q
+$env:HARNESS_INTEGRATION = '1'
+$env:HARNESS_SYSTEM_URL = 'http://127.0.0.1:18116'
+$env:HARNESS_TESTER_URL = 'http://127.0.0.1:18117'
+$env:HARNESS_SENTINEL_URL = 'http://127.0.0.1:18122'
+$env:HARNESS_EVIDENCE_DIR = 'artifacts/phase4-review/autograder'
+.\.venv\Scripts\python.exe -X utf8 -B -m pytest tester-service/tests/test_http.py -q -p no:cacheprovider --basetemp artifacts/phase4-review/adapter-02-tmp --junitxml artifacts/phase4-review/adapter.xml
+$docker = 'C:/Users/Lenovo-User/AppData/Local/Programs/DockerDesktop/resources/bin/docker.exe'
+.\.venv\Scripts\python.exe -X utf8 -B scripts/check_phase4_runtime.py --project cra-phase3-autograder-phase4-20261101-02 --docker $docker --base-url http://127.0.0.1:18116 --evidence-dir artifacts/phase4-review
+.\.venv\Scripts\python.exe -X utf8 -B scripts/check_autograder_runtime.py --project cra-phase3-autograder-phase4-20261101-02 --docker $docker --tester-url http://127.0.0.1:18117 --timeout-port 18118 --unsafe-port 18123 --evidence-dir artifacts/phase4-review/autograder
+.\.venv\Scripts\python.exe -X utf8 -B scripts/check_deployment_runtime.py --project cra-phase3-deployment-phase4-20261101 --docker $docker --evidence-dir artifacts/phase4-review/deployment-runtime
+.\.venv\Scripts\python.exe -m ruff check cra-service tester-service scripts
+.\.venv\Scripts\python.exe -m ruff format --check cra-service tester-service scripts
+.\.venv\Scripts\python.exe -m mypy
+.\.venv\Scripts\python.exe -X utf8 -B scripts/check_contract.py --evidence-dir artifacts/phase4-review/final
+git diff --check
+```
+
+The temporary-directory paths above identify actual runs; choose a new writable
+basetemp for a later run. Commands require their newly verified local stacks to
+be running and sequential access to the grading target. JUnit XML, redacted HTTP
+bodies/UTC times/dirty source hashes, source/operation observations, runtime JSON
+and logs are in ignored `artifacts/phase4-review/`. Source SHA is base plus dirty
+files; a remote target SHA is deliberately not fabricated. The Phase 4 evidence
+draft tracks hosted, cross-team and per-teammate report material still needed.

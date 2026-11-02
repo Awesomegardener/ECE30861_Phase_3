@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/ossf/osv-schema",
+  "commit": "cfe70141baa3cc24184333c4bdf393f3a6fe9b07",
+  "schema_path": "validation/schema.json",
+  "schema_sha256": "ec09a74d4c4f7bafd57ee76781f2104f873fc1113b3eb82f047b5a09ab651afb",
+  "license": "Apache-2.0"
+}

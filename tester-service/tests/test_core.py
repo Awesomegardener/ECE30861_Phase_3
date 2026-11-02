@@ -8,7 +8,7 @@ from dataclasses import replace
 import pytest
 from autograder.api import Harness
 from autograder.config import TEAM2, TEAM6, HarnessError, Settings, normalize_target, session_id
-from autograder.runner import Runner, parse_junit
+from autograder.runner import EXPECTED_TESTS, Runner, parse_junit
 
 
 @pytest.fixture
@@ -107,6 +107,64 @@ def test_incomplete_collection_cannot_pass(tmp_path):
     path = tmp_path / "empty.xml"
     path.write_text("<testsuites/>")
     assert parse_junit(path, 0)["result"] == "error"
+
+
+@pytest.mark.parametrize("duplicate", [True, False])
+def test_junit_rejects_count_correct_but_incomplete_suite(tmp_path, duplicate):
+    root = ET.Element("testsuite")
+    for index in range(EXPECTED_TESTS):
+        ET.SubElement(
+            root,
+            "testcase",
+            classname="app.cra-service.test_api",
+            name="test_repeated" if duplicate else f"test_original_{index}",
+            time="0",
+        )
+    path = tmp_path / "misleading.xml"
+    ET.ElementTree(root).write(path)
+    report = parse_junit(path, 0)
+    assert report["summary"]["passed"] == EXPECTED_TESTS  # Preserve real record counts.
+    assert report["result"] == "error"  # Counts alone must not certify the full suite.
+
+
+@pytest.mark.parametrize("missing_groups", [False, True])
+def test_junit_requires_phase4_acceptance_groups(tmp_path, missing_groups):
+    root = ET.Element("testsuite")
+    for index in range(157):
+        ET.SubElement(
+            root,
+            "testcase",
+            classname="app.cra-service.test_api",
+            name=f"test_ac01_original_{index}",
+            time="0",
+        )
+    for number, count in ((4, 10), (5, 11), (6, 62), (7, 113)):
+        for index in range(count):
+            name = (
+                f"test_ac04_wrong_{number}_{index}"
+                if missing_groups
+                else f"test_ac{number:02d}_case_{index}"
+            )
+            ET.SubElement(
+                root, "testcase", classname="app.cra-service.test_phase4_api", name=name, time="0"
+            )
+    path = tmp_path / "groups.xml"
+    ET.ElementTree(root).write(path)
+    report = parse_junit(path, 0)
+    assert report["result"] == ("error" if missing_groups else "pass")
+    assert report["summary"]["total"] == report["summary"]["passed"] == EXPECTED_TESTS
+
+
+def test_tester_does_not_implicitly_approve_peer_reset_targets(monkeypatch):
+    monkeypatch.delenv("AUTOGRADER_APPROVED_TARGETS", raising=False)
+    monkeypatch.delenv("AUTOGRADER_DEFAULT_TARGET", raising=False)
+    monkeypatch.setenv("AUTOGRADER_ENABLED", "true")
+    monkeypatch.setenv("AUTOGRADER_ALLOW_RESET", "true")
+    monkeypatch.setenv("AUTOGRADER_DATABASE_URL", "unused-test-dsn")
+    configured = Settings.environment("tester")
+    assert configured.authorize(TEAM2) == TEAM2
+    with pytest.raises(HarnessError, match="explicitly approved"):
+        configured.authorize(TEAM6)
 
 
 def test_bad_xml_cannot_be_interpreted_as_success(tmp_path):

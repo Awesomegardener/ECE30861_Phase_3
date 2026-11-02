@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 import requests
 import yaml
+from autograder.runner import EXPECTED_TESTS
 from jsonschema import Draft202012Validator, FormatChecker
 from referencing import Registry
 from referencing.jsonschema import DRAFT202012
@@ -76,12 +77,17 @@ def test_discovery_and_real_suite(urls, role):
     assert before["status"] == "ready" and before["checks"] == []
     outcome = request(base, "POST", "/test/run", json={"session_id": identifier})
     assert outcome["result"] == "pass", outcome
-    assert outcome["summary"]["passed"] == outcome["summary"]["total"] == 157
+    assert outcome["summary"]["passed"] == outcome["summary"]["total"] == EXPECTED_TESTS
     report = request(base, "GET", f"/test/report?session_id={identifier}")
-    assert report["result"] == "pass" and len(report["checks"]) == 157
+    assert report["result"] == "pass" and len(report["checks"]) == EXPECTED_TESTS
+    assert {check["ac"] for check in report["checks"]} == {f"AC-{i:02d}" for i in range(1, 8)}
     assert all(check["passed"] for check in report["checks"])
     assert report["duration_ms"] > 0 and report["started_at"] and report["finished_at"]
     assert report["evidence"]["exchanges"]
+    for ac in ("AC-01", "AC-04", "AC-06", "AC-07"):
+        assert any(
+            c["ac"] == ac and c.get("request") and c.get("response") for c in report["checks"]
+        )
     assert request(base, "POST", "/test/run", json={"session_id": identifier}) == outcome
     evidence = Path(os.getenv("HARNESS_EVIDENCE_DIR", ROOT / "artifacts/autograder"))
     evidence.mkdir(parents=True, exist_ok=True)
@@ -163,7 +169,7 @@ def test_real_failing_target_reports_failures(urls):
     assert outcome["result"] == report["result"] == "fail"
     assert report["summary"]["failed"] > 0 and report["summary"]["errors"] == 0
     assert any(not check["passed"] and check["actual"] for check in report["checks"])
-    assert len(report["checks"]) == 157
+    assert len(report["checks"]) == EXPECTED_TESTS
     evidence = Path(os.getenv("HARNESS_EVIDENCE_DIR", ROOT / "artifacts/autograder"))
     evidence.mkdir(parents=True, exist_ok=True)
     (evidence / "failing-report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
@@ -197,5 +203,5 @@ def test_real_redirect_cannot_forward_a_reset_to_an_unapproved_system(urls):
     outcome = request(urls["tester"], "POST", "/test/run", json={"session_id": identifier})
     report = request(urls["tester"], "GET", f"/test/report?session_id={identifier}")
     assert outcome["result"] == report["result"] == "error"
-    assert report["summary"]["passed"] == 0 and report["summary"]["errors"] == 157
+    assert report["summary"]["passed"] == 0 and report["summary"]["errors"] == EXPECTED_TESTS
     assert requests.get(sentinel + "/count", timeout=5).json()["destructive_requests"] == before
