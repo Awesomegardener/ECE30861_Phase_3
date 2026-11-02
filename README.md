@@ -1,27 +1,80 @@
-> Current Phase 4 pod update: 353 portable HTTP cases (157 original + 196 Phase 4), local OSV snapshot source and proposed contract changes. See [review/results](docs/phase4-pod-update.md), [source operations](docs/osv-snapshots.md) and [ADR](docs/adr-0001-osv-snapshots.md). No Phase 4 deployment is claimed.
+# ECE 30861 CRA Phase 4 service
 
-# ECE 30861 — CRA Phase 3 and Phase 4 service
+FastAPI + PostgreSQL + Docker service for release registration, CycloneDX SBOM
+inventory, CVE impact analysis and incident/deadline management. The Phase 4
+implementation is merged into `main`, passed GitHub Actions and is deployed on
+Google Cloud Run with Cloud SQL PostgreSQL. This is a course-project increment;
+the complete CRA implementation and production vulnerability-feed operations are
+not finished.
 
-FastAPI + PostgreSQL + Docker release registration and CycloneDX JSON component
-ingestion, deterministic CVE matching and persistent incident/deadline tracking.
-The authoritative interface is [`docs/openapi.yaml`](docs/openapi.yaml);
-it and [`fixtures/`](fixtures/) are unchanged. Phase 5 reports/audit remain deferred.
+## Current deployment and verified results
 
-## Current Phase 4 local increment — November 1, 2026
+The deployment details and public test results below are verified information
+supplied by Team 2. They were not rerun during this README-only update.
 
-The [current readiness review](docs/phase4-pod-update.md) records this update.
-The [OSV architectural decision](docs/adr-0001-osv-snapshots.md) supersedes the
-unimplemented Dependency-Track plan. Real local OSV ingestion/matching exists;
-full-feed coverage, operational refresh and hosted verification remain incomplete.
+| Deployment field | Current value |
+|---|---|
+| Google Cloud project | `cra-vulnerability-service` |
+| Region | `us-central1` |
+| System | [cra-phase3-api](https://cra-phase3-api-456725640364.us-central1.run.app) |
+| Tester | [cra-phase3-tester](https://cra-phase3-tester-456725640364.us-central1.run.app) |
+| Deployed source commit | [`9e1dae298eaa4e09fd94d0e86366d37ba37f6806`](https://github.com/Awesomegardener/ECE30861_Phase_3/commit/9e1dae298eaa4e09fd94d0e86366d37ba37f6806) |
+| System revision | `cra-phase3-api-00006-jop` |
+| Tester revision | `cra-phase3-tester-00002-hak` |
+| Repository status | `main` contains the Phase 4 implementation |
 
-[Implementation, limitations and API semantics](docs/phase4-implementation.md),
-[paired deployment procedure](docs/deployment-phase4.md),
-[models](docs/models.md) and [submission evidence draft](docs/phase4-evidence-draft.md).
-The user reports the existing system/tester deployed at `ad42a43` with 157/157 tests;
-the new code has **not** been committed, run in remote CI or deployed.
-The hosted runner now packages **353 HTTP cases**: the unchanged original 157
-plus 196 Phase 4 cases. OSV is the default production source; the separate
-fixture source runs only in explicitly enabled disposable databases.
+The automated portable HTTP suite contains **353 cases**: all **157 original
+Phase 3 cases** plus **196 Phase 4 cases**.
+
+| Verified testing direction | Passed / total |
+|---|---:|
+| Team 2 tester against Team 2 system | **353 / 353** |
+| Team 2 tester against Team 6 system | **341 / 353** |
+| Team 6 tester against Team 2 system | **48 / 50 required checks** |
+
+Cross-team differences remain unresolved; these totals do not identify the causes
+or establish complete compatibility. Per-check reports and agreed resolutions
+are still needed. Passing checks are not a source-code coverage measurement.
+See the [cross-team run guide](https://github.com/Awesomegardener/ECE30861_Phase_3/blob/main/docs/phase4-cross-team-testing.md)
+and [Q6.1 evidence template](https://github.com/Awesomegardener/ECE30861_Phase_3/blob/main/docs/phase4-q61-results-template.md).
+
+## Phase 4 capabilities and documentation
+
+- **CVE impact analysis (REQ-03):** queries stored component inventories and groups
+  affected releases by current UTC support status. Versioned PURL matching ignores
+  qualifiers/subpaths; components without PURLs cannot match affected PURL entries.
+- **Vulnerability-source handling (REQ-04):** distinguishes unknown CVEs, known but
+  unaffected inventory and source unavailability. Supports a separate deterministic
+  grading source and validated local OSV snapshots with provenance and freshness
+  checks; grading fixtures are not production vulnerability-feed integration.
+- **Incident registration (REQ-05):** persists awareness time, mandatory/voluntary
+  classification, rationale and actor attribution, with format-checked optional
+  CVE IDs and updates to fix availability.
+- **Reporting deadlines (REQ-06):** computes mandatory early warning at awareness
+  +24 hours, notification at +72 hours and final report at fix availability +14
+  days. UTC statuses are calculated on read; voluntary stages remain not_applicable.
+  This tracks deadlines and submissions, not regulatory report generation or push alerts.
+
+Current implementation and operating references on `main`:
+
+- [Phase 4 implementation and API semantics](https://github.com/Awesomegardener/ECE30861_Phase_3/blob/main/docs/phase4-implementation.md)
+- [Architecture and data models](https://github.com/Awesomegardener/ECE30861_Phase_3/blob/main/docs/models.md)
+- [Phase 4 paired deployment and rollback guide](https://github.com/Awesomegardener/ECE30861_Phase_3/blob/main/docs/deployment-phase4.md)
+- [Google Cloud Console guide](https://github.com/Awesomegardener/ECE30861_Phase_3/blob/main/docs/deployment-google-cloud.md)
+- [Separate tester deployment guide](https://github.com/Awesomegardener/ECE30861_Phase_3/blob/main/docs/deployment-tester-google-cloud.md)
+- [OSV snapshot operations and limits](https://github.com/Awesomegardener/ECE30861_Phase_3/blob/main/docs/osv-snapshots.md)
+- [OSV architectural decision](https://github.com/Awesomegardener/ECE30861_Phase_3/blob/main/docs/adr-0001-osv-snapshots.md)
+
+Some linked reviews, evidence drafts and deployment guides retain pre-deployment
+status statements. Those statements are historical snapshots; the deployment
+and public results above supersede them. Their technical procedures and stated
+limitations still need to be considered.
+
+The authoritative pod interface remains [`docs/openapi.yaml`](docs/openapi.yaml).
+It and the shared [`fixtures/`](fixtures/) have not been changed by this update.
+[`docs/openapi.phase4-proposed.yaml`](docs/openapi.phase4-proposed.yaml) is separate
+and remains pending Team 6's final review; deployed behavior does not constitute
+approval of a shared-contract change.
 
 New API examples, after selecting an authorized disposable target and setting
 `VULNERABILITY_SOURCE=fixture`, `VULNERABILITY_TEST_MODE=true`, and
@@ -88,7 +141,7 @@ Operational health: `/health/live` returns 200 without querying PostgreSQL;
 the database is unavailable. Both omit shared API schemas. Docker uses `PORT`
 when provided and defaults to 8080; the existing Compose mappings stay unchanged.
 
-## HTTP autograder services (October 26 history; extended in Phase 4)
+## HTTP system and tester adapters
 
 Both system and separate `tester-service/` expose discovery, setup, synchronous
 run and report at `/test*`. They now run both portable pytest files (353 cases) and
@@ -99,8 +152,8 @@ the dedicated `cra_grading` database. Harness subprocesses block redirects and
 unapproved destinations. Our public target must advertise guarded reset readiness
 before the tester launches destructive checks. The local harness stack uses
 separate grading/report databases and ordinary roles in a new isolated volume.
-Both existing URLs are reported deployed by the user. This Phase 4 increment has
-not updated either public service. The GitHub Python blob is not a tester URL.
+The separate system and tester URLs and current revisions are listed above.
+The GitHub Python source-file URL is not a deployed tester URL.
 
 - [Protocol, safety boundaries and local HTTP verification](docs/autograder-interface.md)
 - [Separate provisional HTTP contract](docs/autograder-openapi.yaml)
@@ -154,7 +207,7 @@ docker compose -f cra-service/docker-compose.test.yml down
 Normal tests consume the agreed SBOM unchanged; they do not regenerate it or
 contact vulnerability services.
 
-## Save Phase 3 report evidence
+## Save HTTP test evidence
 
 Each HTTP run writes a separate `http-evidence-<UTC>-<id>.json` file. It records
 the target URL, operator-supplied target SHA, runner SHA/dirty state, source and
@@ -187,18 +240,15 @@ deployed-service verification must be recorded separately.
 .\.venv\Scripts\python.exe -X utf8 -B scripts/check_contract.py
 ```
 
-GitHub Actions runs these checks and the Docker suite on Python 3.11, then uploads
-results/logs. The [main run for baseline commit `f27cfd5`](https://github.com/Awesomegardener/ECE30861_Phase_3/actions/runs/39157992256)
-was verified successful. The deployment-readiness increment passes **291 local
-tests**, including 157 HTTP tests against a fresh Docker stack, plus real
-concurrent schema initialization, container PORT, DB-outage/recovery, restart
-persistence, graceful-shutdown and nested-insert rollback checks. See
-`docs/testing.md` for counts, commands, evidence and limits. The updated workflow
-runs those Docker checks too, but has not run on GitHub for this uncommitted
-increment; the baseline run does not cover it.
-The workflow captures synthetic HTTP bodies and the checkout SHA. Merge blocking
-depends on branch protection; both branches were reported unprotected during an
-earlier review, and that setting was not changed here.
+[GitHub Actions run 41357984819](https://github.com/Awesomegardener/ECE30861_Phase_3/actions/runs/41357984819)
+passed for the deployed Phase 4 source commit `9e1dae2`. The system/API job passed
+**701 tests**, and the autograder job passed **97 regressions and 8 HTTP integration
+checks**, including saved reports with **353 passing cases from each adapter**.
+Startup, rollback, source handling, persistence, locking and timeout checks also
+passed. These are isolated CI results, separate from the public results above.
+CI uploads synthetic results/logs and records its checkout SHA. Repository branch
+protection determines whether checks block merges; no current protection setting
+is assumed here.
 
 Ignored local `artifacts/` outputs include JUnit results, response observations,
 status JSON for all 17 contract operations, and protected-input hashes. Responses
@@ -219,25 +269,52 @@ must have a string version. Counts and storage retain repeated valid occurrences
 metadata/tool subtrees are excluded. Identical sibling entries still fail the
 official schemas' uniqueness constraint. Replacement remains transactional.
 
-The user supplied Team 6 questions and Team 2 acceptance/recommendations. Final
-Team 6 acknowledgement of metadata/tool exclusion, occurrence retention and the
-wider exact-code testing policy is not documented. These implementation choices
-are not a newly approved shared contract; see `docs/decisions.md`. Open questions
-also include empty release strings, absent inventory arrays, clock/error details
-and reset defaults. Exact error assertions are limited to explicit missing-header
-`INVALID_REQUEST` and unchanged shared-fixture expectations; other errors need the
-contract envelope, expected status and meaningful nonempty reason.
+## Known limitations and remaining work
 
-Google Cloud Run plus Cloud SQL PostgreSQL is the selected deployment architecture.
-The release/reset fix is committed at `609ab4038b7c8cf3de060470fcd628e81fa15c0a`.
-Saved public rerun evidence records **157 passed / 0 failed** against that
-operator-supplied target SHA; live revision metadata was not reverified here.
-The previous `7686edf` run recorded 156 passed / 1 failed. See
-[the findings and regression evidence](docs/testing.md#release-creation--concurrent-reset-investigation).
-Cloud revision metadata, registry update and two-way Team 6 results remain
-unverified. PORT, startup and health improvements are verified locally.
-The Console guide covers Cloud SQL sockets, secrets, IAM, costs, probes, hosted
-verification and rollback. Root `cloudbuild.yaml` builds/publishes an image only
-when run by an authorized operator; it does not deploy. Cloud configuration,
-spending and further deployment require approval and coordinated testing. Reserve
-the shared database for one reset-based test run at a time.
+- **Production OSV feed operations are incomplete (REQ-03/04).** Real snapshot
+  fetching, schema validation, atomic PostgreSQL ingestion, provenance and local
+  matching are implemented. Production coverage selection, automated refresh,
+  freshness monitoring, retention and representative full-feed performance still
+  need operational verification. Explicit versions, SEMVER and PyPI ECOSYSTEM
+  ranges are supported; other native ecosystem and Git-range comparisons remain
+  unsupported and return source-unavailable when needed. A passing fixture-backed
+  test run does not prove complete production OSV integration.
+- **Report generation (REQ-07) is deferred.** HTTP tester reports are execution
+  evidence, not generated regulatory reports or submissions to authorities.
+- **Immutable audit logging (REQ-08) is incomplete.** Persisted incident/submission
+  attribution and latest update metadata do not provide a complete append-only
+  history of corrections or satisfy the full Phase 5 audit scope.
+- **Cross-team differences remain.** The reported 341/353 and 48/50 required-check
+  results need per-case diagnosis and coordinated resolution. Proposed contract
+  additions and fixture review/sign-off remain separate from deployment success;
+  do not infer final Team 6 approval from these results.
+- **Reset-based testing requires coordination.** Use disposable grading data and
+  explicitly approved targets, run one suite at a time and reconfirm Team 6's
+  current URL and reset authorization before another run. Never target retained
+  `cra_phase3` or a production OSV inventory. Deadline statuses are calculated on
+  retrieval; no Phase 4 push-alert service is implemented.
+
+OSV records, provenance and the active snapshot pointer persist in PostgreSQL;
+Cloud Run's temporary filesystem is not the durable source. Missing/stale snapshots
+and unavailable storage fail explicitly. Database readiness alone does not certify
+snapshot freshness. See [OSV operations](docs/osv-snapshots.md).
+
+## Historical Phase 3 evidence
+
+The following records are retained for traceability and do not describe current
+Phase 4 deployment readiness:
+
+- [Baseline CI run for `f27cfd5`](https://github.com/Awesomegardener/ECE30861_Phase_3/actions/runs/39157992256)
+  passed. The earlier deployment-readiness increment reported 291 local tests,
+  including 157 original HTTP cases.
+- The earlier deployed `7686edf` run recorded 156 passed and 1 failed. The
+  release/reset race fix at `609ab4038b7c8cf3de060470fcd628e81fa15c0a` subsequently
+  recorded 157 passed and 0 failed. See [the investigation and regression evidence](docs/testing.md#release-creation--concurrent-reset-investigation).
+- Earlier records for `ad42a43`, the [pre-deployment Phase 4 review](docs/phase4-pod-update.md)
+  and [evidence draft](docs/phase4-evidence-draft.md) describe the state before the
+  current merged/deployed source commit and are retained as historical records.
+
+Cloud builds and deployments remain distinct operations. Root `cloudbuild.yaml`
+and `cloudbuild-tester.yaml` build/publish images; they do not deploy or switch
+traffic. Further deployments, cloud configuration changes and database operations
+require explicit authorization and coordinated testing.
