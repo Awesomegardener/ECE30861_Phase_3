@@ -2,6 +2,14 @@
 
 # Phase 4 paired deployment plan (not executed)
 
+**November 6 autograder review:** use the [grading coverage rollout](autograder-coverage-deployment.md)
+for this fix. It adds an explicit `grading` image/entrypoint, authenticated
+request-driven measurement and a new shared service secret. The older commands
+below omit those settings and do not enable measured grading reports. The
+commit/push/PR is now authorized; cloud builds, secrets/IAM, deployment and
+public resets remain separate approvals. Preserve actual current rollback
+revisions rather than assuming the historical SHA below is still current.
+
 Review/approval gate: do not run cloud commands until the user approves commit,
 push, builds and deployment. Local implementation is not public verification.
 Keep both existing URLs, existing Cloud SQL instance, `cra_grading` domain DB,

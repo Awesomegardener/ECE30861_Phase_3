@@ -76,16 +76,35 @@ jobs:
           python scripts/check_phase4_runtime.py --project "$COMPOSE_PROJECT_NAME" --evidence-dir artifacts/autograder
           python scripts/check_osv_runtime.py --project "$COMPOSE_PROJECT_NAME" --evidence-dir artifacts/autograder
           python scripts/check_autograder_runtime.py --project "$COMPOSE_PROJECT_NAME"
+      - name: Verify deployable grading coverage and durable reports
+        env:
+          HARNESS_SYSTEM_PORT: "18146"
+          HARNESS_TESTER_PORT: "18147"
+          HARNESS_SENTINEL_PORT: "18152"
+          HARNESS_OSV_PORT: "18154"
+          HARNESS_SYSTEM_URL: http://127.0.0.1:18146
+          HARNESS_TESTER_URL: http://127.0.0.1:18147
+          HARNESS_GRADING_INTEGRATION: "1"
+          HARNESS_EVIDENCE_DIR: artifacts/grading-live
+        run: |
+          docker compose -p cra-phase3-autograder-live-ci -f tester-service/docker-compose.test.yml -f tester-service/docker-compose.grading.yml up --build -d --wait --wait-timeout 240
+          python -m pytest tester-service/tests/test_grading_http.py -q --junitxml=artifacts/grading-live/http-results.xml
+          python scripts/check_autograder_runtime.py --grading-profile --project cra-phase3-autograder-live-ci --tester-url http://127.0.0.1:18147 --timeout-port 18148 --unsafe-port 18153 --evidence-dir artifacts/grading-live
       - name: Capture adapter logs
         if: always()
         run: |
-          mkdir -p artifacts/autograder
+          mkdir -p artifacts/autograder artifacts/grading-live
           docker compose -f tester-service/docker-compose.test.yml logs --no-color > artifacts/autograder/compose.log
+          docker compose -p cra-phase3-autograder-live-ci -f tester-service/docker-compose.test.yml logs --no-color > artifacts/grading-live/compose.log 2>&1 || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: autograder-results
-          path: artifacts/autograder/
+          path: |
+            artifacts/autograder/
+            artifacts/grading-live/
       - name: Stop disposable services without deleting volumes
         if: always()
-        run: docker compose -f tester-service/docker-compose.test.yml down
+        run: |
+          docker compose -f tester-service/docker-compose.test.yml down
+          docker compose -p cra-phase3-autograder-live-ci -f tester-service/docker-compose.test.yml down

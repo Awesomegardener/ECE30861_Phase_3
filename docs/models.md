@@ -2,6 +2,12 @@
 
 November 1, 2026. Local code, not proof of deployment. [Source ADR](adr-0001-osv-snapshots.md).
 
+November 6 measurement addendum: [proposed coverage definitions](coverage-measures.md)
+and [machine-readable mapping](coverage-model.json) define ten architectural
+components and eighteen selected domain transitions below. Coverage uses actual
+server execution and named behavioral assertions; these are Team 2 proposals,
+not confirmed grader definitions. Phase 5 remains outside that measured model.
+
 ## Architecture
 
 ```mermaid
@@ -15,6 +21,8 @@ flowchart LR
  H[System HTTP adapter] --> P[Guarded pytest: 353 cases]
  T[Separate tester adapter] --> P
  P -->|Approved grading origin only| A
+ P -->|Per-run request token and test context| W[Opt-in server coverage window]
+ W -->|Measured source, component and proposed model evidence| R
  H --> R[(Separate report DB and execution lock)]
  T --> R
 ```

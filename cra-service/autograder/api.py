@@ -1,6 +1,8 @@
 """Provisional ReleaseGate-compatible HTTP interface, implemented independently."""
 
 import datetime
+import logging
+import re
 import uuid
 
 import psycopg2
@@ -9,8 +11,32 @@ from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
 from .config import HarnessError, Settings, session_id
+from .coverage import unavailable_coverage
 from .runner import Runner, empty_summary, utc_now
 from .store import Store
+
+INPUT_FIELDS = frozenset({"session_id", "target_base_url", "now"})
+LOGGER = logging.getLogger(__name__)
+
+
+def field_shape(name, value):
+    # Inspect top-level names/types only. Never include values or nested contents;
+    # unusual names may themselves contain URLs, credentials or log control bytes.
+    label = name if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,47}", name) else "[redacted-name]"
+    kind = (
+        "null"
+        if value is None
+        else "boolean"
+        if isinstance(value, bool)
+        else "string"
+        if isinstance(value, str)
+        else "object"
+        if isinstance(value, dict)
+        else "array"
+        if isinstance(value, list)
+        else "number"
+    )
+    return f"{label} ({kind})"
 
 
 class Harness:
@@ -23,8 +49,22 @@ class Harness:
         self.verify_database = verify_database
 
     def validate(self, values):
-        if set(values) - {"session_id", "target_base_url", "now"}:
-            raise HarnessError(400, "INVALID_REQUEST", "Unexpected request fields")
+        unexpected = sorted(set(values) - INPUT_FIELDS)
+        if unexpected:
+            fields = ", ".join(field_shape(name, values[name]) for name in unexpected[:12])
+            LOGGER.warning(
+                "autograder_input_rejected role=%s code=INVALID_REQUEST unexpected_count=%d fields=%s",
+                self.settings.role,
+                len(unexpected),
+                fields,
+            )
+            raise HarnessError(
+                400,
+                "INVALID_REQUEST",
+                f"Unexpected request fields ({len(unexpected)}): {fields}. "
+                "Accepted fields: session_id, target_base_url, now. "
+                "Use target_base_url for an explicitly approved target; no aliases are inferred.",
+            )
         identifier = session_id(values["session_id"]) if "session_id" in values else None
         if "target_base_url" in values and not isinstance(values["target_base_url"], str):
             raise HarnessError(400, "INVALID_TARGET", "target_base_url must be a string")
@@ -65,6 +105,7 @@ class Harness:
             finished_at=None,
             duration_ms=None,
             running=False,
+            coverage=unavailable_coverage(),
         )
         self.store.create(conn, report)
         return report
@@ -111,7 +152,13 @@ class Harness:
                     with conn.cursor() as cur:
                         cur.execute("SELECT 1")
 
-                report.update(self.runner.execute(report["target_base_url"], heartbeat))
+                report.update(
+                    self.runner.execute(
+                        report["target_base_url"],
+                        heartbeat,
+                        session={"role": self.settings.role, "session_id": report["session_id"]},
+                    )
+                )
             except HarnessError as exc:
                 report.update(result="error", summary=empty_summary(), checks=[], error=exc.message)
             except Exception as exc:
@@ -147,7 +194,7 @@ class Harness:
         report = self.store.read(self.settings.role, identifier)
         if report is None:
             raise HarnessError(404, "SESSION_NOT_FOUND", "Unknown session_id or no session yet")
-        return report
+        return {**report, "coverage": report.get("coverage", unavailable_coverage())}
 
 
 async def request_values(request):
@@ -180,10 +227,12 @@ def install(
     application.state.autograder = harness
     router = APIRouter(tags=["Provisional autograder adapter"])
 
-    async def call(operation, *arguments):
+    async def call(operation, *arguments, status_code=200):
         try:
             result = await run_in_threadpool(operation, *arguments)
-            return JSONResponse(result, headers={"Cache-Control": "no-store"})
+            return JSONResponse(
+                result, status_code=status_code, headers={"Cache-Control": "no-store"}
+            )
         except HarnessError as exc:
             return JSONResponse(
                 {"error": {"code": exc.code, "message": exc.message}}, status_code=exc.status
@@ -215,14 +264,17 @@ def install(
             description="Independent pytest adapter; provisional Team 6 interface compatibility. Runs reset disposable targets.",
             enabled=harness.settings.enabled,
             reset_ready=reset_ready,
+            coverage_enabled=harness.settings.coverage_enabled,
+            coverage_ready=reset_ready and hasattr(application.state, "live_coverage"),
             endpoints={
                 "setup": "POST /test/setup",
                 "run": "POST /test/run",
                 "report": "GET /test/report?session_id=...",
             },
+            input_fields=sorted(INPUT_FIELDS),
         )
 
-    @router.post("/test/setup")
+    @router.post("/test/setup", status_code=201)
     async def setup(request: Request):
         try:
             values = await request_values(request)
@@ -230,7 +282,7 @@ def install(
             return JSONResponse(
                 {"error": {"code": exc.code, "message": exc.message}}, status_code=exc.status
             )
-        return await call(harness.setup, values)
+        return await call(harness.setup, values, status_code=201)
 
     @router.post("/test/run")
     async def run(request: Request):

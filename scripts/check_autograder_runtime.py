@@ -29,6 +29,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", required=True, type=project_name)
     parser.add_argument("--docker", default="docker")
+    parser.add_argument(
+        "--grading-profile",
+        action="store_true",
+        help="Use the authenticated request-driven coverage override",
+    )
     parser.add_argument("--tester-url", default="http://127.0.0.1:18087")
     parser.add_argument("--timeout-port", type=int, default=18088)
     parser.add_argument("--unsafe-port", type=int, default=18093)
@@ -43,7 +48,12 @@ def main():
         ).strip()
 
     def compose(*arguments):
-        return docker("compose", "-p", args.project, "-f", str(COMPOSE), *arguments)
+        override = (
+            ["-f", str(ROOT / "tester-service/docker-compose.grading.yml")]
+            if args.grading_profile
+            else []
+        )
+        return docker("compose", "-p", args.project, "-f", str(COMPOSE), *override, *arguments)
 
     def call(base, method, path, **kwargs):
         response = requests.request(method, base + path, timeout=660, **kwargs)

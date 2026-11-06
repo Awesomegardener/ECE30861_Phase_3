@@ -131,7 +131,7 @@ STATUS=$(curl --silent --show-error --connect-timeout 15 --max-time 60 \
   -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
   --data-binary @"$EVIDENCE_DIR/setup-request.json" "$TESTER_BASE/test/setup")
 printf '%s\n' "$STATUS" > "$EVIDENCE_DIR/setup-status.txt"
-[[ "$STATUS" == 200 ]] || { cat "$EVIDENCE_DIR/setup-response.json"; exit 1; }
+[[ "$STATUS" == 201 ]] || { cat "$EVIDENCE_DIR/setup-response.json"; exit 1; }
 jq -e --arg id "$RUN_ID" --arg target "$TARGET_BASE" \
   '.session_id == $id and .target_base_url == $target and .role == "tester"' \
   "$EVIDENCE_DIR/setup-response.json"

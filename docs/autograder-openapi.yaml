@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Team 2 provisional autograder adapter
-  version: 0.1.0
+  version: 0.1.1
   description: >-
     Independently implemented on both system and tester. Compatibility reference:
     ReleaseGate docs/openapi.yaml at 9c0b1917b6ed316d51b412685805bd8766b8edea.
@@ -29,6 +29,11 @@ paths:
                     type: boolean
                     description: Team 2 extension; true only for an enabled system with verified cra_grading reset configuration. Tester always returns false.
                   endpoints: {type: object, additionalProperties: {type: string}}
+                  input_fields: {type: array, items: {type: string}}
+                  coverage_enabled: {type: boolean}
+                  coverage_ready:
+                    type: boolean
+                    description: True only on a verified system with the request-driven collector installed; tester is a client and returns false.
   /test/setup:
     post:
       description: >-
@@ -49,7 +54,7 @@ paths:
           application/json:
             schema: {$ref: '#/components/schemas/Input'}
       responses:
-        '200':
+        '201':
           description: Ready session
           content:
             application/json:
@@ -127,6 +132,24 @@ paths:
                   finished_at: {type: [string, 'null']}
                   duration_ms: {type: [integer, 'null']}
                   running: {type: boolean}
+                  coverage:
+                    type: object
+                    description: >-
+                      Team 2 diagnostic extension, not a confirmed grader schema.
+                      code/component/system report unavailable with null percent for
+                      uninstrumented targets. The opt-in authenticated grading
+                      profile collects target statements/branches, component execution
+                      and proposed named transitions during the exact role session,
+                      then persists these measurements and a hashed compressed trace
+                      before run returns. It requires a single worker/replica and
+                      separate per-run context/request tokens; no shutdown import.
+                      Proposed definitions are in coverage-model.json; not confirmed
+                      staff denominators or coverage field names.
+                      http_operations counts shared-contract operations receiving
+                      any HTTP response, including failures, over the full evidence
+                      bundle. Includes specification SHA256, observed/total counts,
+                      missing operations and per-operation response status counts.
+                      http_operations does not measure source or system-model coverage.
                   checks:
                     type: array
                     items: {$ref: '#/components/schemas/Check'}

@@ -81,7 +81,7 @@ def test_setup_run_and_report_keep_explicit_target_and_complete_suite_argv(adapt
     harness, request, launches = adapter
     assert harness.settings.approved_targets == {TEAM2, TEAM6}
     status, setup = request("POST", "/test/setup", {"target_base_url": target})
-    assert status == 200 and setup["target_base_url"] == target
+    assert status == 201 and setup["target_base_url"] == target
     identifier = setup["session_id"]
     assert launches == []  # Tester setup does not contact/reset the selected system.
     status, outcome = request("POST", "/test/run", {"session_id": identifier})
@@ -97,6 +97,7 @@ def test_setup_run_and_report_keep_explicit_target_and_complete_suite_argv(adapt
     assert status == 200 and report["target_base_url"] == target
     assert report["result"] == "error" and report["checks"] == []
     assert report["summary"]["passed"] == report["summary"]["total"] == 0
+    assert all(item["status"] == "unavailable" for item in report["coverage"].values())
     assert "RuntimeError" in report["error"]  # Interrupted execution never fabricates passes.
 
 
@@ -128,3 +129,45 @@ def test_selected_target_cannot_be_switched_or_used_after_approval_removed(adapt
     status, body = request("POST", "/test/run", payload)
     assert status == 400 and body["error"]["code"] == "INVALID_TARGET"
     assert launches == []
+
+
+@pytest.mark.parametrize("path", ["/test/setup", "/test/run"])
+@pytest.mark.parametrize("query_input", [False, True])
+def test_unknown_fields_are_diagnosed_without_target_fallback_or_value_leaks(
+    adapter, caplog, path, query_input
+):
+    harness, request, launches = adapter
+    # A hypothetical unknown name is a negative test, not a supported grader alias.
+    secret = "https://user:password@example.com/?token=very-sensitive"
+    payload = {"unrecognized_field": secret, "credentials": {"password": secret}}
+    kwargs = {"query": "unrecognized_field=" + secret} if query_input else {"payload": payload}
+    status, body = request("POST", path, **kwargs)
+    assert status == 400 and body["error"]["code"] == "INVALID_REQUEST"
+    assert "unrecognized_field (string)" in body["error"]["message"]
+    assert "target_base_url" in body["error"]["message"]
+    assert "unrecognized_field (string)" in caplog.text
+    assert "role=tester" in caplog.text
+    for value in (secret, "very-sensitive", "user:password"):
+        assert value not in caplog.text and value not in json.dumps(body)
+    assert harness.store.rows == {} and launches == []
+
+
+def test_unusual_unknown_field_names_are_redacted(adapter, caplog):
+    harness, request, launches = adapter
+    name = "https://user:secret@example.com/\nforged-log-entry"
+    status, body = request("POST", "/test/setup", {name: "private-value"})
+    assert status == 400
+    assert "[redacted-name]" in caplog.text
+    assert name not in caplog.text and "forged-log-entry" not in json.dumps(body)
+    assert harness.store.rows == {} and launches == []
+
+
+def test_legacy_saved_report_has_explicit_unavailable_coverage(adapter):
+    harness, request, _ = adapter
+    _, setup = request("POST", "/test/setup")
+    identifier = setup["session_id"]
+    del harness.store.rows[("tester", identifier)]["coverage"]
+    status, report = request("GET", "/test/report", query=f"session_id={identifier}")
+    assert status == 200
+    assert all(item["percent"] is None for item in report["coverage"].values())
+    assert "coverage" not in harness.store.rows[("tester", identifier)]

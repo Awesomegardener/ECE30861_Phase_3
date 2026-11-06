@@ -1,0 +1,37 @@
+{
+  "version": "team2-proposed-1",
+  "scope": "Phase 3/4 domain Python service; component execution and selected domain state transitions",
+  "source_files": ["main.py", "sbom_validation.py", "timestamps.py", "phase4.py", "purl_matching.py", "osv_source.py"],
+  "components": [
+    {"id": "C01", "name": "Release registry", "functions": {"main.py": ["create_release", "get_release"]}},
+    {"id": "C02", "name": "UTC support clock", "functions": {"main.py": ["_current_time", "_release_response", "test_clock"], "timestamps.py": ["validate_timestamp"]}},
+    {"id": "C03", "name": "CycloneDX structural validator", "functions": {"sbom_validation.py": ["validate_sbom"]}},
+    {"id": "C04", "name": "Inventory replacement and query", "functions": {"main.py": ["upload_sbom", "get_components"]}},
+    {"id": "C05", "name": "Transactional storage and reset", "functions": {"main.py": ["database", "test_reset"]}},
+    {"id": "C06", "name": "Fixture vulnerability source and package matching", "functions": {"phase4.py": ["install.configure_source", "install.affected_releases"], "purl_matching.py": ["exact_purl"]}},
+    {"id": "C07", "name": "Incident and submission persistence", "functions": {"phase4.py": ["install.create_incident", "install.get_incident", "install.update_incident", "install.record_submission"]}},
+    {"id": "C08", "name": "Deadline derivation", "functions": {"phase4.py": ["deadline", "incident_response", "add_time"]}},
+    {"id": "C09", "name": "OSV snapshot reading and range matching", "functions": {"osv_source.py": ["read_records", "records_match", "range_matches"]}},
+    {"id": "C10", "name": "OSV snapshot validation and atomic import", "functions": {"osv_source.py": ["validate_bundle", "import_snapshot"]}}
+  ],
+  "transitions": [
+    {"id": "M01", "from": "release absent", "event": "valid registration", "to": "release stored and readable", "test": "test_api::test_ac01_shared_release_cases", "components": ["C01"]},
+    {"id": "M02", "from": "release stored", "event": "duplicate product/version", "to": "conflict, original retained", "test": "test_api::test_release_duplicate_and_long_strings", "components": ["C01"]},
+    {"id": "M03", "from": "release supported", "event": "UTC date passes support end", "to": "release unsupported", "test": "test_api::test_ac01_support_boundary[2026-11-02T00:00:00Z-unsupported]", "components": ["C01", "C02"]},
+    {"id": "M04", "from": "registered empty inventory", "event": "valid SBOM ingestion", "to": "25 components associated with correct release", "test": "test_api::test_ac02_shared_25_components_are_isolated", "components": ["C03", "C04"]},
+    {"id": "M05", "from": "existing inventory", "event": "valid nested replacement", "to": "replacement inventory without merged old rows", "test": "test_api::test_ac02_nested_inventory_counts_isolation_and_replacement", "components": ["C03", "C04"]},
+    {"id": "M06", "from": "existing inventory", "event": "malformed or structurally invalid SBOM", "to": "rejection with unchanged inventory", "test": "test_api::test_ac03_invalid_sbom_never_changes_inventory", "parameter_contains": "preserve-existing", "components": ["C04"]},
+    {"id": "M07", "from": "release and inventory stored", "event": "domain reset", "to": "releases and inventory absent", "test": "test_api::test_reset_is_repeatable_and_clears_inventory", "components": ["C01", "C04", "C05"]},
+    {"id": "M08", "from": "incident absent", "event": "mandatory awareness registration", "to": "early/notification pending, final not applicable", "test": "test_phase4_api::test_ac07_exact_acceptance_sequence_and_independent_statuses", "components": ["C07", "C08"]},
+    {"id": "M09", "from": "early warning pending", "event": "on-time submission", "to": "early warning met", "test": "test_phase4_api::test_ac07_exact_acceptance_sequence_and_independent_statuses", "components": ["C07", "C08"]},
+    {"id": "M10", "from": "notification pending", "event": "clock advances beyond due", "to": "notification overdue", "test": "test_phase4_api::test_ac07_exact_acceptance_sequence_and_independent_statuses", "components": ["C02", "C08"]},
+    {"id": "M11", "from": "final report not applicable", "event": "fix availability recorded", "to": "final deadline scheduled at fix plus 14 days", "test": "test_phase4_api::test_ac07_exact_acceptance_sequence_and_independent_statuses", "components": ["C07", "C08"]},
+    {"id": "M12", "from": "final report scheduled", "event": "on-time final submission", "to": "final met independently of overdue notification", "test": "test_phase4_api::test_ac07_exact_acceptance_sequence_and_independent_statuses", "components": ["C07", "C08"]},
+    {"id": "M13", "from": "stage pending", "event": "late submission", "to": "submitted stage remains overdue", "test": "test_phase4_api::test_ac07_late_submissions_stay_overdue", "components": ["C07", "C08"]},
+    {"id": "M14", "from": "submission recorded", "event": "duplicate submission", "to": "conflict with original submission unchanged", "test": "test_phase4_api::test_ac07_missing_fix_and_duplicate_submissions_are_rejected_without_overwrite", "components": ["C07", "C08"]},
+    {"id": "M15", "from": "voluntary incident stages not applicable", "event": "fix recorded and submissions attempted", "to": "stages stay not applicable; submissions rejected", "test": "test_phase4_api::test_ac07_future_fix_replacement_and_voluntary_stages", "components": ["C07", "C08"]},
+    {"id": "M16", "from": "fixture source available", "event": "outage then recovery with replacement records", "to": "503 during outage then successful match", "test": "test_phase4_api::test_ac05_known_unaffected_unknown_and_outage_are_distinct", "components": ["C06"]},
+    {"id": "M17", "from": "existing inventory", "event": "SQL insertion failure during replacement", "to": "transaction rolls back to old inventory", "test": null, "components": ["C04", "C05"], "gap": "Fault-injection runtime script exists but is not attributed to this HTTP suite"},
+    {"id": "M18", "from": "OSV snapshot absent", "event": "validated atomic snapshot import", "to": "active provenance-bound OSV generation", "test": null, "components": ["C09", "C10"], "gap": "Fixture-mode suite does not execute OSV import/matching"}
+  ]
+}

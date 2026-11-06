@@ -15,6 +15,19 @@ import requests  # type: ignore[import-untyped]
 
 from .config import HarnessError, normalize_target
 
+TEST_ID = ""
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_protocol(item, nextitem):
+    global TEST_ID
+    file, _, name = item.nodeid.partition("::")
+    TEST_ID = "cra-service/" + file.replace("\\", "/").rsplit("/", 1)[-1] + "::" + name
+    try:
+        yield
+    finally:
+        TEST_ID = ""
+
 
 @contextmanager
 def guard_requests(target):
@@ -35,6 +48,12 @@ def guard_requests(target):
             )
         kwargs["allow_redirects"] = False
         kwargs["proxies"] = {}  # Do not route through inherited proxy settings.
+        if os.getenv("CRA_COVERAGE_RUN_ID") and TEST_ID:
+            # Applied to every child Session, including concurrent raw requests.
+            request.headers["X-CRA-Coverage-Test"] = TEST_ID
+            request.headers["X-CRA-Coverage-Run"] = os.environ["CRA_COVERAGE_RUN_ID"]
+            if os.getenv("CRA_COVERAGE_REQUEST_TOKEN"):
+                request.headers["X-CRA-Coverage-Request"] = os.environ["CRA_COVERAGE_REQUEST_TOKEN"]
         return original_send(session, request, **kwargs)
 
     with patch.object(requests.Session, "send", send):

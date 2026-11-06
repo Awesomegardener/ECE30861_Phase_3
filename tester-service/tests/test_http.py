@@ -63,7 +63,7 @@ def request(base, method, path, expected=200, **kwargs):
 
 
 def setup(base, **values):
-    return request(base, "POST", "/test/setup", json=values or {})["session_id"]
+    return request(base, "POST", "/test/setup", expected=201, json=values or {})["session_id"]
 
 
 @pytest.mark.parametrize("role", ["system", "tester"])
@@ -72,9 +72,13 @@ def test_discovery_and_real_suite(urls, role):
     discovery = request(base, "GET", "/test")
     assert discovery["role"] == role
     assert discovery["reset_ready"] is (role == "system")
+    schema = requests.get(base + "/openapi.json", timeout=10).json()
+    assert "201" in schema["paths"]["/test/setup"]["post"]["responses"]
+    assert "200" not in schema["paths"]["/test/setup"]["post"]["responses"]
     identifier = setup(base)
     before = request(base, "GET", f"/test/report?session_id={identifier}")
     assert before["status"] == "ready" and before["checks"] == []
+    assert before["coverage"]["http_operations"]["status"] == "unavailable"
     outcome = request(base, "POST", "/test/run", json={"session_id": identifier})
     assert outcome["result"] == "pass", outcome
     assert outcome["summary"]["passed"] == outcome["summary"]["total"] == EXPECTED_TESTS
@@ -84,6 +88,14 @@ def test_discovery_and_real_suite(urls, role):
     assert all(check["passed"] for check in report["checks"])
     assert report["duration_ms"] > 0 and report["started_at"] and report["finished_at"]
     assert report["evidence"]["exchanges"]
+    coverage = report["coverage"]
+    assert all(coverage[k]["percent"] is None for k in ("code", "component", "system"))
+    operations = coverage["http_operations"]
+    assert operations["status"] == "measured"
+    assert 0 < operations["observed"] < operations["total"]
+    assert operations["observed"] + len(operations["missing"]) == operations["total"]
+    # Full-run observations, not only the eight examples retained in the report.
+    assert sum(op["responses"] for op in operations["operations"]) > 8
     for ac in ("AC-01", "AC-04", "AC-06", "AC-07"):
         assert any(
             c["ac"] == ac and c.get("request") and c.get("response") for c in report["checks"]
@@ -124,9 +136,19 @@ def test_invalid_requests_and_sessions(urls, role):
         base, "POST", "/test/setup?session_id=first", expected=400, json={"session_id": "second"}
     )
     identifier = "query-" + uuid.uuid4().hex
-    result = request(base, "POST", f"/test/setup?session_id={identifier}")
+    result = request(base, "POST", f"/test/setup?session_id={identifier}", expected=201)
     assert result["session_id"] == identifier
     request(base, "POST", "/test/setup", expected=409, json={"session_id": identifier})
+    for method_path in ("/test/setup", "/test/run"):
+        rejection = request(
+            base,
+            "POST",
+            method_path,
+            expected=400,
+            json={"unknown_metadata": {"token": "must-not-appear"}},
+        )
+        assert "unknown_metadata (object)" in rejection["error"]["message"]
+        assert "must-not-appear" not in json.dumps(rejection)
 
 
 def test_invalid_clock_does_not_reset_database(urls):
