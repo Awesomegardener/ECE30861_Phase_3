@@ -103,6 +103,10 @@ Both existing URLs are reported deployed by the user. This Phase 4 increment has
 not updated either public service. The GitHub Python blob is not a tester URL.
 
 - [Protocol, safety boundaries and local HTTP verification](docs/autograder-interface.md)
+- [November 6 autograder fix, verified results and rollout handoff](docs/autograder-fix.md)
+- [Exact Cloud Run grading configuration, coverage, costs and reset effects](docs/autograder-coverage-deployment.md)
+- [Isolated server coverage and proposed component/model measures](docs/coverage-measures.md)
+- [November 6 read-only registry and deployment inspection](docs/deployment-inspection-2026-11-06.md)
 - [Separate provisional HTTP contract](docs/autograder-openapi.yaml)
 - [Console deployment, settings, secrets and registry](docs/deployment-tester-google-cloud.md)
 

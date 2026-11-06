@@ -20,6 +20,11 @@ system/tester URLs, reachable October 28–29, 2026, and registry updates by
 and `/test/report`; the shared specification and authentication notes must be
 accessible. The announcement does not establish full schemas or execution rules.
 
+November 6 grading feedback confirms successful setup must return **201**;
+run and report return **200**. Both adapters now implement this correction.
+The grader's rejected request body/query and complete request/report schemas
+are still unavailable. See [fix evidence and rollout notes](autograder-fix.md).
+
 We provisionally adopt Team 6's GET discovery, POST setup, synchronous POST run,
 GET report, JSON/query input, generated or supplied session identifiers, latest
 session defaults, 400/404/409 envelopes, and ready/completed/pass/fail/error
@@ -60,6 +65,10 @@ Intentional Team 2 choices:
   fields, unknown fields and invalid input return 400. `now` belongs to system
   setup only; valid RFC 3339 offsets normalize through the original clock model.
   Each unchanged pytest case subsequently resets and sets its own fixture clock.
+  Unknown-field errors and warning logs now list bounded top-level field names
+  and JSON types plus accepted fields in the response. Values and nested content
+  are omitted; unusual names are redacted. Rejected inputs create no session and
+  launch no child. Unknown target names are never mapped to the default target.
 - Run without an ID uses the latest session; if no session exists, it creates one.
   An explicitly unknown ID returns 404. Reports without an ID use the latest
   session **for that role**. System and tester session IDs need not be shared.
@@ -93,8 +102,9 @@ all domain test state. Tester setup only selects a target;
 run executes the existing suite, which resets that target before **every case**.
 
 A fresh `python -m pytest cra-service/test_api.py cra-service/test_phase4_api.py` subprocess writes JUnit and
-bounded redacted HTTP evidence in a unique temporary directory. No assertions,
-fixtures or parameterizations are rewritten. Runs are sequential; the existing
+bounded redacted HTTP evidence in a unique temporary directory. Collection remains
+353 cases; support-boundary and duplicate-registration tests now also assert their
+before/after state for model witnesses. Runs are sequential; the existing
 intentional concurrent SBOM replacement test still runs its own two requests.
 The child does not inherit database URL/password/token/credential environment
 variables. No target commit is invented: reports identify runner BUILD_SHA when
@@ -111,6 +121,28 @@ an error. JUnit teardown errors may add records beyond the 353 collected cases.
 Reports retain per-test outcomes and
 representative redacted request/response evidence; complete temporary log/XML/body
 files are removed after parsing, not retained as durable downloadable artifacts.
+
+Reports include a Team 2 `coverage` diagnostic extension. The explicit grading
+image/profile collects authenticated target execution during each run and saves
+source/branch measurements, component witnesses, proposed model transitions and
+a compressed trace directly with the completed session before responding. No
+Docker-only importer or shutdown hook is involved. See
+[definitions and instrumentation](coverage-measures.md). It uses the same
+request-driven code intended for Cloud Run; actual hosted rollout is not claimed.
+It does not establish the grader's report schema. Targets without explicitly
+configured instrumentation report unavailable, not invented coverage.
+Measured `http_operations` counts each operation in the
+unchanged shared OpenAPI receiving at least one HTTP response in the full run
+(including failures). It records the specification hash, observed/total counts,
+missing operations and status counts. It is an API observation metric, not code,
+component or state/transition coverage and not a confirmed grader report schema.
+No setup, interrupted run or legacy report gains an invented measurement.
+
+The [exact grading deployment configuration](autograder-coverage-deployment.md)
+requires a single worker/replica, concurrency greater than one, a new service
+secret shared only by the two Team 2 services, and existing isolated grading/report
+storage. Internal coverage controls are authenticated and excluded from OpenAPI.
+No additional caller authentication is imposed on public `/test*` paths.
 
 ## Persistence and interference boundaries
 

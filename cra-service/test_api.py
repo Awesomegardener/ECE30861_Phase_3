@@ -41,6 +41,7 @@ def test_ac01_support_boundary(api, now, status):
     release = api.create(
         {"product": "BoundaryRouter", "version": "1", "support_end_date": "2026-11-01"}
     )
+    assert release["support_status"] == "supported"
     assert api.request("PUT", "/test/clock", json={"now": now}).status_code == 200
     response = api.request("GET", f"/releases/{release['release_id']}")
     assert response.json()["support_status"] == status
@@ -91,8 +92,10 @@ def test_release_malformed_json(api):
 
 def test_release_duplicate_and_long_strings(api):
     payload = {"product": "p" * 300, "version": "v" * 120, "support_end_date": "2027-01-01"}
-    api.create(payload)
+    original = api.create(payload)
     assert api.request("POST", "/releases", json=payload).status_code == 409
+    fetched = api.request("GET", f"/releases/{original['release_id']}")
+    assert fetched.status_code == 200 and fetched.json() == original
 
 
 @pytest.mark.parametrize("header", [None, ""])

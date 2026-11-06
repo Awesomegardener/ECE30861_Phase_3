@@ -17,6 +17,8 @@ from typing import Any
 from http_evidence import redact_text
 
 from .config import TEAM2, HarnessError
+from .coverage import operation_coverage, unavailable_coverage
+from .coverage_client import CoverageClient
 
 SUITE_FILES = ("cra-service/test_api.py", "cra-service/test_phase4_api.py")
 EXPECTED_TESTS = 353  # 157 original Phase 3 + 196 Phase 4 cases; checked against collection.
@@ -160,9 +162,32 @@ class Runner:
     def __init__(self, settings):
         self.settings = settings
 
-    def execute(self, target, heartbeat):
+    def execute(self, target, heartbeat, session=None):
         target = self.settings.authorize(target)
         verify_public_target(target)
+        client, window = None, None
+        if self.settings.coverage_enabled and target in self.settings.coverage_targets:
+            if not session:
+                raise HarnessError(
+                    503, "COVERAGE_UNAVAILABLE", "A report session is required for coverage"
+                )
+            client = CoverageClient(self.settings, target, session)
+        try:
+            if client:
+                window = client.start()
+            result = self._execute(target, heartbeat, window)
+            if client:
+                try:
+                    result["coverage"].update(client.finish(result))
+                except HarnessError as exc:
+                    # Retain genuine test outcomes even when measurement fails.
+                    result.update(result="error", error=exc.message)
+            return result
+        finally:
+            if client:
+                client.abort()
+
+    def _execute(self, target, heartbeat, window=None):
         with tempfile.TemporaryDirectory(prefix="cra-acceptance-") as temporary:
             directory = Path(temporary)
             xml = directory / "results.xml"
@@ -201,6 +226,9 @@ class Runner:
             environment.update(PYTEST_DISABLE_PLUGIN_AUTOLOAD="1", PYTHONDONTWRITEBYTECODE="1")
             environment["PYTHONPATH"] = str(self.settings.root / "cra-service")
             environment["CRA_HARNESS_TARGET"] = target
+            if window:
+                environment["CRA_COVERAGE_RUN_ID"] = window["run_id"]
+                environment["CRA_COVERAGE_REQUEST_TOKEN"] = window["request_token"]
             with (directory / "pytest.log").open("w", encoding="utf-8") as output:
                 process = subprocess.Popen(
                     command,
@@ -227,12 +255,16 @@ class Runner:
                     with CHILD_LOCK:
                         CHILDREN.discard(process)
             result = parse_junit(xml, process.returncode)
+            result["coverage"] = unavailable_coverage()
             result["runner_build_sha"] = os.getenv("BUILD_SHA") or None
             result["tested_commit_sha"] = None  # No claim about a remote target's deployed SHA.
             # Keep real redacted HTTP examples with test ids/statuses/UTC times.
             evidence = next(directory.glob("http-evidence-*.json"), None)
             if evidence:
                 bundle = json.loads(evidence.read_text(encoding="utf-8"))
+                result["coverage"]["http_operations"] = operation_coverage(
+                    bundle["exchanges"], self.settings.root / "docs/openapi.yaml"
+                )
                 result["evidence"] = dict(run=bundle["run"], exchanges=bundle["exchanges"][:8])
                 examples: dict[tuple[str, str], Any] = {}
                 for exchange in bundle["exchanges"]:

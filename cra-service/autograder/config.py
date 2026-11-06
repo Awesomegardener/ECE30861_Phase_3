@@ -2,7 +2,7 @@
 
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -64,12 +64,15 @@ class Settings:
     role: str
     enabled: bool
     allow_reset: bool
-    database_url: str
+    database_url: str = field(repr=False)
     default_target: str
     approved_targets: frozenset[str]
     reset_database: str
     timeout: int
     root: Path = ROOT
+    coverage_enabled: bool = False
+    coverage_targets: frozenset[str] = frozenset()
+    coverage_token: str = field(default="", repr=False)
 
     @classmethod
     def environment(cls, role):
@@ -79,7 +82,7 @@ class Settings:
         timeout = int(os.getenv("AUTOGRADER_RUN_TIMEOUT_SECONDS", "600"))
         if not 1 <= timeout <= 1800:
             raise ValueError("AUTOGRADER_RUN_TIMEOUT_SECONDS must be between 1 and 1800")
-        return cls(
+        configured = cls(
             role=role,
             enabled=os.getenv("AUTOGRADER_ENABLED", "false").lower() == "true",
             allow_reset=os.getenv("AUTOGRADER_ALLOW_RESET", "false").lower() == "true",
@@ -91,7 +94,20 @@ class Settings:
             ),
             reset_database=os.getenv("AUTOGRADER_RESET_DATABASE", ""),
             timeout=timeout,
+            coverage_enabled=os.getenv("AUTOGRADER_COVERAGE_ENABLED", "false").lower() == "true",
+            coverage_targets=frozenset(
+                normalize_target(value)
+                for value in os.getenv("AUTOGRADER_COVERAGE_TARGETS", "").split(",")
+                if value
+            ),
+            coverage_token=os.getenv("AUTOGRADER_COVERAGE_TOKEN", ""),
         )
+        if configured.coverage_enabled:
+            if len(configured.coverage_token) < 32 or not configured.coverage_targets:
+                raise ValueError("Coverage requires a service secret and explicit coverage origins")
+            if not configured.coverage_targets <= configured.approved_targets:
+                raise ValueError("Coverage origins must also be explicitly approved test targets")
+        return configured
 
     def authorize(self, target=None):
         if not self.enabled or not self.database_url:
