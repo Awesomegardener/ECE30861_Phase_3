@@ -10,6 +10,7 @@ COPY cra-service/vendor/osv/ ./cra-service/vendor/osv/
 COPY scripts/osv_snapshot.py ./scripts/osv_snapshot.py
 COPY cra-service/autograder/ ./cra-service/autograder/
 COPY docs/openapi.yaml ./docs/openapi.yaml
+COPY docs/autograder-openapi.yaml docs/system-test-openapi.yaml ./docs/
 COPY fixtures/ ./fixtures/
 ARG BUILD_SHA=unknown
 ENV BUILD_SHA=$BUILD_SHA
@@ -23,7 +24,6 @@ RUN pip install --no-cache-dir -r requirements-coverage.txt
 
 # Explicit deployment image for the resettable, single-replica grading service.
 FROM coverage-runtime AS grading
-COPY docs/coverage-model.json /app/docs/coverage-model.json
 CMD ["python", "-m", "autograder.grading_server"]
 
 # Default Cloud Build/Compose image retains the existing runtime and entrypoint.

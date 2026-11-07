@@ -7,12 +7,6 @@ services:
     mem_limit: 1g
     environment:
       AUTOGRADER_COVERAGE_ENABLED: "true"
-      AUTOGRADER_COVERAGE_TARGETS: http://127.0.0.1:8080
-      AUTOGRADER_COVERAGE_TOKEN: local-grading-coverage-key-for-tests-only
   tester:
     cpus: 1.0
     mem_limit: 1g
-    environment:
-      AUTOGRADER_COVERAGE_ENABLED: "true"
-      AUTOGRADER_COVERAGE_TARGETS: http://api:8080
-      AUTOGRADER_COVERAGE_TOKEN: local-grading-coverage-key-for-tests-only

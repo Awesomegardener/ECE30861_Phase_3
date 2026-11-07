@@ -1,7 +1,35 @@
 """Single-worker instrumented Cloud Run entrypoint. No filesystem persistence."""
 
 import os
+import time
+from contextlib import asynccontextmanager
 from pathlib import Path
+
+
+def configure_preparation(service):
+    """Keep grading controls reachable before domain resources are ready.
+
+    The ordinary production lifespan is unchanged. Grading setup initializes
+    schema on demand, after checking the existing disposable database identity.
+    It does not provision cloud resources or bypass the reset authorization.
+    """
+    harness = service.app.state.autograder
+    reset = harness.reset
+
+    def prepare(now, approved_database):
+        service.autograder_verify_database(approved_database)
+        service.init_db(deadline=time.monotonic() + harness.settings.setup_timeout)
+        reset(now, approved_database)
+
+    @asynccontextmanager
+    async def controls_lifespan(application):
+        try:
+            yield
+        finally:
+            service.shutdown_children()
+
+    harness.reset = prepare
+    service.app.router.lifespan_context = controls_lifespan
 
 
 def main():
@@ -24,25 +52,14 @@ def main():
     collector.start()
     import main as service
 
-    from .live_coverage import LiveCoverage
+    from .live_coverage import SessionCoverage
 
-    settings = service.app.state.autograder.settings
+    configure_preparation(service)
     store = service.app.state.autograder.store
-
-    def session_running(role, identifier):
-        with store.connection() as conn:
-            report = store.get(conn, role, identifier)
-        return bool(report and report.get("running"))
-
-    manager = LiveCoverage(
-        collector,
-        root.parent,
-        settings,
-        service.autograder_verify_database,
-        session_running=session_running,
-    )
-    manager.install(service.app)
-    service.app.state.live_coverage = manager
+    if service.app.state.autograder.settings.coverage_enabled:
+        manager = SessionCoverage(collector, root.parent, store)
+        manager.install(service.app)
+        service.app.state.session_coverage = manager
     uvicorn.run(
         service.app,
         host="0.0.0.0",

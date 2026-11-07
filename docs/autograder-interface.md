@@ -1,212 +1,77 @@
-> Phase4 Q6.1 addition: see [phase4-cross-team-testing](phase4-cross-team-testing.md). Bidirectional target support is verified offline; actual public runs and live allowlist configuration remain pending authorization.
+# Cross-team testing interface
 
-# Team 2 HTTP autograder adapter
+The source of truth is the **full course Cross-team Testing Interface v0.4.2 prose** ([supplied document](https://docs.google.com/document/d/1GhEVTw3a2tNJY2arfDyWgWS94kVYfgC7/edit)), including execution, coverage, error and concurrency rules. Its minimal OpenAPI starter is insufficient by itself. The earlier peer OpenAPI was provisional and is superseded. Project behavior, fixtures, resets and acceptance criteria come from the [pod Phase 2 specification](https://docs.google.com/document/d/1jRBiYWWyYGn-SjoQ4pHxduenk8bkCmpJAyVD0Wt8SP8/edit), especially Q4.1 and Q5.3. The domain contract remains [openapi.yaml](openapi.yaml).
 
-This extension is independent Team 2 code. The provisional external reference is
-[Team 6 OpenAPI](https://github.com/sanjayriram44/ReleaseGate/blob/9c0b1917b6ed316d51b412685805bd8766b8edea/docs/openapi.yaml)
-and [README](https://github.com/sanjayriram44/ReleaseGate/blob/9c0b1917b6ed316d51b412685805bd8766b8edea/README.md),
-read October 26, 2026. Only those two documentation files were consulted; no peer
-implementation, tests or database design was copied. This is compatibility
-evidence, **not documented instructor approval**. Our original CRA contract and
-Team 6 fixtures are unchanged. The new interface is specified separately in
-`autograder-openapi.yaml`. The November 1 Phase 4 extension adds the contract's
-CVE/incident operations and a second HTTP test file; Phase 5 remains deferred.
+Complete role-specific schemas: [tester](autograder-openapi.yaml) and [system](system-test-openapi.yaml). Each running service incorporates its role's schemas in `/openapi.json`, using namespaced components to preserve the project API schemas.
 
-## Confirmed requirements and assumptions
+## Calls and lifecycle
 
-The staff announcement supplied by the user requires distinguishable deployed
-system/tester URLs, reachable October 28–29, 2026, and registry updates by
-**October 27, 11:59 p.m. Eastern**. Staff append `/test`, `/test/setup`, `/test/run`
-and `/test/report`; the shared specification and authentication notes must be
-accessible. The announcement does not establish full schemas or execution rules.
+1. Tester `POST /test/setup` requires `{"target_url":"https://system-base"}`. It authorizes that URL using the existing exact allowlist, generates a UUID, and sends `{"session_id":"<same UUID>","setup":{}}` to **that target's** `/test/setup`. It waits for 201 and the same ID before returning 201 `{"session_id":"..."}`. No suite runs during preparation.
+2. System `POST /test/setup` requires `session_id` and an object `setup`. It checks the disposable database identity, clears CRA test data, prepares the baseline, and returns that supplied ID with 201. Existing IDs return 409, including failed preparation IDs. Failed preparation returns 500 with `message` and `source:"system"`. Tester forwards a valid upstream error's status/message/source unchanged and leaves no runnable tester session.
+3. Tester `POST /test/run` requires `{"session_id":"..."}`. It runs the existing **353** Phase 3/4 tests, retrieves system code coverage by the same ID, persists the complete report, and returns it with 200. Evaluated test failures and system/communication errors are results; they do not themselves turn a completed batch into HTTP 500.
+4. Tester `GET /test/report?session_id=...` returns 409 until execution ends, then 200 with the immutable stored report. It never runs, repeats, recovers or edits tests. Concurrent and later runs return 409, including after an abort. Invalid requests do not consume a ready session.
+5. A tester abort returns 500 `{"message":"...","source":"tester"}` after saving available results. Completed outcomes remain; an active test prevented from evaluation becomes `error`/`tester`; remaining unexecuted tests are `skip`. A fresh setup/ID is needed to run again. Following a lost response, poll report rather than retry run. A process crash may leave no retrievable report, as the course prose allows; lookup does not fabricate one.
+6. System `GET /test/report?session_id=...` returns only `session_id` and `coverage.code`, with 409 while preparation is in progress. It does not run tests. It can report direct staff project requests without a tester batch. Reading coverage is observational; later project calls may increase it. A system `/test/run` is not exposed.
 
-November 6 grading feedback confirms successful setup must return **201**;
-run and report return **200**. Both adapters now implement this correction.
-The grader's rejected request body/query and complete request/report schemas
-are still unavailable. See [fix evidence and rollout notes](autograder-fix.md).
+Tester report shape:
 
-We provisionally adopt Team 6's GET discovery, POST setup, synchronous POST run,
-GET report, JSON/query input, generated or supplied session identifiers, latest
-session defaults, 400/404/409 envelopes, and ready/completed/pass/fail/error
-structure. Both roles expose these paths. Confirm this protocol with staff.
-
-Intentional Team 2 choices:
-
-- All **157 unchanged Phase 3 cases plus 196 Phase 4 cases (353 total)** are required.
-  The runner checks expected collection count and reports AC-01 through AC-07.
-  We do not adopt Team 6's smaller
-  suite, informational classifications, nested-component implementation or
-  "under 30 seconds" performance promise. Historical hosted execution was about
-  104 seconds; the subprocess budget is 600 seconds, HTTP deployment budget 900.
-- The target is an exact approved origin (optionally entered with `/api/v1`).
-  Tester defaults approve only Team 2's grading origin. Team 6 requires explicit
-  allowlist configuration during a coordinated reset window and removal afterward;
-  an existing environment override is not changed by deploying a new image.
-  Credentials, arbitrary paths, query strings and fragments are rejected. Only
-  operator-configured Team 2/Team 6 targets are allowed, plus explicitly configured
-  loopback/container origins for isolated/self testing. No user-controlled shell
-  commands, pytest arguments, file paths or executable names are accepted.
-  A harness-only pytest plugin checks every prepared request, disables all
-  redirects and ignores environment proxies. This includes new sessions used
-  by the intentional concurrent test. The original CLI fixtures are unchanged.
-- System self-tests use only `http://127.0.0.1:PORT` (8080 by default), never a
-  public fallback, remote hostname or different port, even if allowlisted.
-  Adapter resets require both the exact `cra_grading` database name in config
-  and the actual connection; a retained/course database cannot be selected.
-  Our public URL must additionally advertise `role: system, reset_ready: true`
-  before the tester launches pytest. An older/unready Team 2 revision is refused
-  without issuing a reset. This is an optional Team 2 discovery extension, not a
-  requirement imposed on Team 6's independent protocol. Tester discovery returns
-  `reset_ready: false`; it does not own a domain database.
-- Session IDs contain 1–128 letters, digits, `_`, `.` or `-`. Existing IDs cannot
-  be replaced: setup returns 409. Completed run retries return the stored result;
-  a new setup/session is required to rerun. A session's target is immutable.
-- Setup/run accept JSON objects or equivalent query fields. Conflicting body/query
-  fields, unknown fields and invalid input return 400. `now` belongs to system
-  setup only; valid RFC 3339 offsets normalize through the original clock model.
-  Each unchanged pytest case subsequently resets and sets its own fixture clock.
-  Unknown-field errors and warning logs now list bounded top-level field names
-  and JSON types plus accepted fields in the response. Values and nested content
-  are omitted; unusual names are redacted. Rejected inputs create no session and
-  launch no child. Unknown target names are never mapped to the default target.
-- Run without an ID uses the latest session; if no session exists, it creates one.
-  An explicitly unknown ID returns 404. Reports without an ID use the latest
-  session **for that role**. System and tester session IDs need not be shared.
-- During execution reports remain `status: ready`, with `running: true` and no
-  success result. This preserves the reference status enum. Timeouts, incomplete
-  collection, missing XML, fixture errors and interruptions return `result: error`.
-  These are extensions/clarifications, not newly agreed pod requirements.
-- Configuration/storage failures return a non-secret 503 envelope. Setup collisions
-  return 409 as well as active-run collisions. These extra responses are documented
-  in our extension; they do not alter the original CRA API errors.
-
-## How it works
-
-```mermaid
-flowchart LR
-  Staff --> S[Existing CRA system /test adapter]
-  Staff --> T[Separate HTTP tester /test adapter]
-  S --> M[(Shared report database and execution lock)]
-  T --> M
-  S --> P[Fresh pytest subprocess: 157 original plus 196 Phase 4 tests]
-  T --> P
-  P --> C[Explicitly approved disposable CRA target]
+```json
+{
+  "session_id": "a-unique-id",
+  "target_url": "https://system-base",
+  "results": [
+    {"test_id":"a-unique-test-id","outcome":"pass","message":"Expected behavior observed."}
+  ],
+  "coverage": {
+    "code": {"covered":null,"total":null,"basis":"Source instrumentation unavailable on this target"},
+    "component": {"covered":null,"total":null,"basis":"Shared pod component denominator and exercise rules unavailable"},
+    "system": {"covered":7,"total":10,"basis":"Pod AC-01–AC-10; mapped scenario inputs dispatched, independent of outcomes"}
+  }
+}
 ```
 
-Both services use our `cra-service/autograder/` package. The system also serves a
-JSON homepage. Its adapter calls a separate, opt-in reset function; the original
-`/api/v1` routes retain their behavior. System setup verifies the connected
-database is `cra_grading`, then resets domain data and applies an optional clock in one SQL
-transaction. Phase 4 adds incident/submission/test-source tables; reset clears
-all domain test state. Tester setup only selects a target;
-run executes the existing suite, which resets that target before **every case**.
+The one-result excerpt above illustrates the format, not the complete suite. Every planned test appears exactly once, in order, with a nonempty ID/message. Outcomes are `pass`, `fail`, `error`, `skip`; `error` also requires `source` (`tester`, `system`, `communication`, `unknown`). Expected project errors are passing behavior. Unexpected target internal errors are `error/system`; no-response transport failures are `error/communication`. Each coverage entry contains nonnegative integer counts with covered <= total, or **both null** and a reason in `basis`. Coverage is not a pass rate. See [coverage scope and limitations](coverage-measures.md).
 
-A fresh `python -m pytest cra-service/test_api.py cra-service/test_phase4_api.py` subprocess writes JUnit and
-bounded redacted HTTP evidence in a unique temporary directory. Collection remains
-353 cases; support-boundary and duplicate-registration tests now also assert their
-before/after state for model witnesses. Runs are sequential; the existing
-intentional concurrent SBOM replacement test still runs its own two requests.
-The child does not inherit database URL/password/token/credential environment
-variables. No target commit is invented: reports identify runner BUILD_SHA when
-available and leave target SHA unknown. JUnit determines test outcomes; HTTP
-examples alone do not establish passing assertions.
+## Supported requests and errors
 
-Each check contains a JUnit ID/title, AC group, required/passed flags, expected and
-actual assertion outcome, and an HTTP example when available. AC grouping is a
-reporting aid; the original test names/assertions are authoritative. Summary
-counts expose passed/failed/errors/skipped and required/informational totals.
-Skipped/incomplete suites cannot pass. Count-correct XML with duplicate identities,
-wrong test-file counts or missing Phase 4 acceptance groups is also rejected as
-an error. JUnit teardown errors may add records beyond the 353 collected cases.
-Reports retain per-test outcomes and
-representative redacted request/response evidence; complete temporary log/XML/body
-files are removed after parsing, not retained as durable downloadable artifacts.
+- The exact rejected grader body `{"target_url":"https://cra-phase3-api-456725640364.us-central1.run.app"}` is supported, subject to enabled controls, explicit target approval and successful system preparation. The end-to-end regression routes that literal hostname to an isolated local target; it does not contact the public service.
+- Tester optionally accepts `setup:{...}` and forwards that object unchanged. This is our extension for pod starting data, not a required tester request field. Our system accepts `{}` or an optional `now` RFC 3339 UTC/offset clock in that object; each test subsequently sets its own deterministic fixture clock. Other systems define their own starting data.
+- Bodies must be JSON objects. Missing/invalid fields, duplicate keys, extra top-level fields, query parameters on POST, GET bodies and missing/duplicate report IDs return 400. Legacy `target_base_url`, caller-supplied tester IDs, implicit/default targets, empty setup requests and query-based setup/run are unsupported under the supplied contract. Unknown metadata is not silently discarded or treated as target selection.
+- Existing target validation remains: exact approved HTTP(S) origins, optionally entered with `/api/v1`, normalize to the origin. Embedded credentials, query strings, fragments and arbitrary path prefixes are refused. Path-prefixed project deployments need an explicit future transport change; their support is not claimed. Redirects and inherited proxies are disabled on preparation, suite and report calls. Arbitrary targets never fall back to the default service.
+- Test endpoint errors use top-level nonempty `message` and `source`: 400 invalid, 404 unknown ID, 409 conflict/not ready, 500 service failure/abort. Valid system setup errors preserve their upstream status/source. Domain `/api/v1` errors retain the separate pod error contract.
+- Source details, request values, secrets and tracebacks are not logged by adapter errors. Tester child diagnostics are redacted; child environment excludes database/password/token/credential variables. Upstream setup messages are forwarded as required by the interface.
 
-Reports include a Team 2 `coverage` diagnostic extension. The explicit grading
-image/profile collects authenticated target execution during each run and saves
-source/branch measurements, component witnesses, proposed model transitions and
-a compressed trace directly with the completed session before responding. No
-Docker-only importer or shutdown hook is involved. See
-[definitions and instrumentation](coverage-measures.md). It uses the same
-request-driven code intended for Cloud Run; actual hosted rollout is not claimed.
-It does not establish the grader's report schema. Targets without explicitly
-configured instrumentation report unavailable, not invented coverage.
-Measured `http_operations` counts each operation in the
-unchanged shared OpenAPI receiving at least one HTTP response in the full run
-(including failures). It records the specification hash, observed/total counts,
-missing operations and status counts. It is an API observation metric, not code,
-component or state/transition coverage and not a confirmed grader report schema.
-No setup, interrupted run or legacy report gains an invented measurement.
+## Preparation, isolation and retention
 
-The [exact grading deployment configuration](autograder-coverage-deployment.md)
-requires a single worker/replica, concurrency greater than one, a new service
-secret shared only by the two Team 2 services, and existing isolated grading/report
-storage. Internal coverage controls are authenticated and excluded from OpenAPI.
-No additional caller authentication is imposed on public `/test*` paths.
+This implementation uses one global disposable CRA database/clock, as in pod Q5.3, **not one database per ID**. Setup resets that state. Tests reset before each case and create prerequisites in order. Only cooperating adapters share the PostgreSQL advisory setup/run mutex. A run holds it through all project calls and coverage retrieval; setup RPC releases the tester mutex so system setup can acquire it without deadlock. Overlapping controls return 409. Only one tester session may be pending across cooperating adapters: another setup is refused until it completes or aborts, preventing a ready suite from losing its baseline. An interrupted pending record may require deliberate operator cleanup after confirming no run remains. IDs link tester/system metadata and coverage; they are not authentication or a data partition.
 
-## Persistence and interference boundaries
+A later setup replaces the global target baseline. Use exclusive target windows and do not leave older prepared sessions pending while preparing another. Instrumented requests carry our optional `X-Test-Session-Id` header; stale IDs are rejected before project execution, and prior coverage freezes before replacement. Untagged peer/direct project requests belong to the current session; direct CLI resets and other teams that bypass our mutex require coordination. The unchanged pod project API cannot fence such callers. No simultaneous independent target sessions are promised.
 
-Use one metadata database, `cra_autograder`, on the **existing** Cloud SQL instance,
-shared by both roles and all revisions. It contains only `autograder.sessions`;
-no new paid instance, Redis, queue or object-storage service is required. CRA
-reset cannot erase it. Reports persist across process/instance restarts and have
-no automatic expiry; retain through grading and clean them up manually afterward.
+`cra_autograder` stores both roles' JSON records independently of `cra_grading`, so domain resets cannot erase reports. Completed tester reports remain immutable and survive normal tester restarts; the contract only requires retention until instance stop. Source collection lives on one system process: prior-session snapshots are frozen at the next setup, terminal tester reports persist retrieved counts, and a restarted/lost collector reports unavailable rather than mixing sessions. No automatic report cleanup is introduced.
 
-A PostgreSQL session advisory lock permits one adapter setup/run at a time across
-both services/targets. Overlapping operations return 409. Ordinary report reads
-do not contend for this lock. The runner checks its lock connection while the
-child runs and terminates the child if that connection fails. Normal shutdown
-terminates active children; hard container termination kills its processes. A
-persisted abandoned running record is recovered as completed/error on the next
-report/control request. An infrastructure failure may require retrying report
-retrieval after database connectivity returns; execution is never resumed halfway.
+New records identify interface version 0.4.2. Earlier records remain untouched;
+legacy tester sessions return 409 directing callers to a new setup instead of
+being run or synthesized into the new report format. They do not reserve the
+new protocol's pending-session window. Drain old revisions before rollout so
+their older setup/run behavior cannot overlap the new lifecycle.
 
-This mutex protects **cooperating adapters**. Original `/api/v1/test/reset` and
-`/api/v1/test/clock` must remain compatible, so direct CLI tests, Team 6's tester
-or manual calls can still interfere. A session ID is reporting metadata, not a
-private partition of the global release/clock tables. Arrange exclusive target
-windows with Team 6 and avoid manual/CLI resets during grading. Under a database
-network partition a failed lock connection is detected on the next heartbeat;
-there is no distributed fencing of the unchanged domain endpoints.
+The grading entrypoint starts its control routes without opening the project database; schema initialization occurs inside system setup after validating the disposable database identity. Thus setup remains reachable when the project database is unavailable and returns the required 500/system envelope. Report storage uses the separate metadata database. Successful preparation still requires that disposable domain database to be available. The normal production startup/retry lifecycle is unchanged. Failed setup never starts the suite. Controls default disabled and resets default unauthorized; enabling both is authorization to erase approved disposable data, not retained production data.
 
-The evaluation target must contain disposable synthetic data. Adapter controls
-default disabled, and reset permission defaults false. Enabling them is an
-operator authorization to erase the approved target during runs. For retained
-cloud data, create a separate empty grading database and switch only the approved
-evaluation revision after review. Do not point local tests at the public service.
+## Timing and deployment
 
-## Local checks
+Register tester setup **65 seconds**, system setup **60 seconds**, tester run **600 seconds** (configure `AUTOGRADER_SETUP_TIMEOUT_SECONDS=60`, `AUTOGRADER_RUN_TIMEOUT_SECONDS=600`, Cloud Run request timeout >=900). Target project calls retain the pod fixtures' 15-second timeout and no implicit retry. The tester run budget includes coverage retrieval. When exhausted, the stored aborted report may contain null code counts explaining why retrieval was not possible.
 
-Run from the repository root (PowerShell example). The new Compose project uses
-ports 18086/18087, its own PostgreSQL volume, and an intentionally broken local
-target. It never connects to Cloud SQL or Team 6.
+For measured source coverage, build the system Docker `grading` target and set `AUTOGRADER_COVERAGE_ENABLED=true`; use one worker, one replica and request concurrency >=2. Tester needs no shared coverage secret or coverage-origin side channel: it reads the contract's system report. Existing legacy coverage env settings are ignored. Ordinary production images report source coverage unavailable honestly. The earlier deployment guide's private coverage-secret rollout is superseded; do not execute it unchanged. This PR does not deploy, change registry entries or reset public data.
 
-Use a **new project name** for the updated dual-database test configuration.
-Its init SQL creates ordinary grading/report roles only on a fresh volume. Do
-not reuse/delete an old volume to make initialization run. Earlier stacks using
-the single `cra_test` DB are retained and should remain stopped; their setup
-does not match the revised test configuration. The original CRA-only Compose
-files still use their existing settings and volumes with adapter controls off.
+## Local verification
 
-```powershell
-python -m pip install -r cra-service/requirements-dev.txt
-docker compose -p cra-phase3-autograder-local -f tester-service/docker-compose.test.yml up --build -d --wait
-python -m pytest cra-service --allow-reset --base-url http://127.0.0.1:18086 -q
-python -m pytest tester-service/tests --ignore=tester-service/tests/test_http.py -q
-$env:HARNESS_INTEGRATION='1'
-$env:HARNESS_SYSTEM_URL='http://127.0.0.1:18086'
-$env:HARNESS_TESTER_URL='http://127.0.0.1:18087'
-python -m pytest tester-service/tests/test_http.py -q
-python scripts/check_autograder_runtime.py --project cra-phase3-autograder-local
+Install `cra-service/requirements-dev.txt`. Adapter unit/ASGI contracts run with:
+
+```sh
+python -m pytest tester-service/tests --ignore=tester-service/tests/test_http.py --ignore=tester-service/tests/test_grading_http.py -q
 python -m ruff check cra-service tester-service scripts
 python -m ruff format --check cra-service tester-service scripts
 python -m mypy
-docker compose -p cra-phase3-autograder-local -f tester-service/docker-compose.test.yml stop
 ```
 
-Do not run the CLI suite and adapter HTTP suite simultaneously. To validate
-responses against the pinned external documentation as well as our own schema,
-download **only that OpenAPI documentation** to an ignored artifact file and set
-`TEAM6_AUTOGRADER_SPEC` to its path before `test_http.py`. CI validates our own
-extension without depending on mutable external URLs. Actual local results are
-recorded in `testing.md`; a locally passing workflow is not a GitHub Actions run.
+CI creates a fresh Compose project using `tester-service/docker-compose.test.yml` plus `docker-compose.contract.yml`, a temporary test-only TLS CA and an internal network. The exact public hostname resolves to the local TLS bridge, with no Internet route from the tester/system containers. A fixed-destination access relay publishes loopback-only test ports. `test_http.py` verifies exact target selection, same-ID forwarding, both reports, readiness, repeated-run rejection, setup failure forwarding and partial-result abort behavior. `test_grading_http.py` verifies genuine direct server execution, read-only snapshots and consecutive-session isolation. Run these only with the documented isolated stack flags, never against public services. The suite plan is pinned to the two preserved domain test files and their conftest; regenerate it from collection if those sources change.

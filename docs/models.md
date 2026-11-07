@@ -2,11 +2,11 @@
 
 November 1, 2026. Local code, not proof of deployment. [Source ADR](adr-0001-osv-snapshots.md).
 
-November 6 measurement addendum: [proposed coverage definitions](coverage-measures.md)
-and [machine-readable mapping](coverage-model.json) define ten architectural
-components and eighteen selected domain transitions below. Coverage uses actual
-server execution and named behavioral assertions; these are Team 2 proposals,
-not confirmed grader definitions. Phase 5 remains outside that measured model.
+November 7 interface correction: [coverage definitions](coverage-measures.md)
+use real server statement execution, unavailable component counts pending pod
+definitions, and the ten pod acceptance criteria. The earlier architecture/model
+transition proposal has been retired; the domain models below remain useful
+design documentation.
 
 ## Architecture
 
@@ -18,11 +18,12 @@ flowchart LR
  I --> D[(Domain DB: raw OSV generations and inventory)]
  A --> D
  A --> C[UTC deadline calculations on read]
- H[System HTTP adapter] --> P[Guarded pytest: 353 cases]
+ T -->|Same ID and setup object| H[System HTTP adapter prepares baseline]
  T[Separate tester adapter] --> P
+ P[Guarded pytest: 353 cases]
  P -->|Approved grading origin only| A
- P -->|Per-run request token and test context| W[Opt-in server coverage window]
- W -->|Measured source, component and proposed model evidence| R
+ A --> W[Source execution since system setup]
+ W -->|Public system report by same ID| T
  H --> R[(Separate report DB and execution lock)]
  T --> R
 ```
@@ -124,11 +125,12 @@ The shared YAML proposal is separate and awaits review.
 ## Historical Phase 3 model notes and unchanged release/SBOM views
 
 The October 26 adapter adds a separate `tester-service` FastAPI process and a
-shared Team 2 harness package. Both role adapters launch the unchanged HTTP pytest
-suite and store JSON session reports in `autograder.sessions`, using one shared
+shared Team 2 harness package. The tester launches the unchanged HTTP pytest
+suite; system setup prepares its supplied ID and system report measures source
+execution. Both store session records in `autograder.sessions`, using one shared
 PostgreSQL advisory execution lock. In deployment this belongs in a separate
 metadata database on the existing Cloud SQL instance; CRA tables above are
-unchanged. See [the adapter architecture diagram](autograder-interface.md#how-it-works).
+unchanged. See [the adapter lifecycle](autograder-interface.md#calls-and-lifecycle).
 These are test execution reports, not Phase 5 regulatory reports or audit records.
 
 ## Architecture and request flow

@@ -46,20 +46,9 @@ class Store:
             if not cur.fetchone()[0]:
                 raise HarnessError(409, "RUN_IN_PROGRESS", "Another setup or run is in progress")
             try:
-                self.recover(conn)
                 yield conn
             finally:
                 cur.execute("SELECT pg_advisory_unlock(%s)", (LOCK,))
-
-    def recover(self, conn):
-        # Only the lock holder may declare an abandoned run interrupted.
-        with conn.cursor() as cur:
-            cur.execute("""UPDATE autograder.sessions SET report = report || jsonb_build_object(
-                'status', 'completed', 'running', false, 'result', 'error',
-                'error', 'Execution interrupted before a complete report was saved',
-                'finished_at', to_char(clock_timestamp() AT TIME ZONE 'UTC',
-                    'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'))
-                WHERE report->>'running' = 'true'""")
 
     def get(self, conn, role, identifier=None):
         with conn.cursor() as cur:
@@ -95,17 +84,26 @@ class Store:
                 (Json(report), report["role"], report["session_id"]),
             )
 
+    def pending_tester(self, conn, *, except_id=None):
+        """One prepared/running suite across the cooperating adapters."""
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT 1 FROM autograder.sessions WHERE role='tester'
+                AND report->>'interface_version'='0.4.2'
+                AND report->>'status' IN ('preparing','ready','running')
+                AND (%s IS NULL OR session_id<>%s) LIMIT 1""",
+                (except_id, except_id),
+            )
+            return cur.fetchone() is not None
+
+    def delete_preparing(self, conn, role, identifier):
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM autograder.sessions WHERE role=%s AND session_id=%s AND report->>'status'='preparing'",
+                (role, identifier),
+            )
+
     def read(self, role, identifier=None):
-        # Recovery is read-triggered after a hard restart, including no next run.
-        with self.connection() as conn, conn.cursor() as cur:
-            report = self.get(conn, role, identifier)
-            # Ordinary polling must not compete with run/setup for the mutex.
-            if not report or not report.get("running"):
-                return report
-            cur.execute("SELECT pg_try_advisory_lock(%s)", (LOCK,))
-            if cur.fetchone()[0]:
-                try:
-                    self.recover(conn)
-                finally:
-                    cur.execute("SELECT pg_advisory_unlock(%s)", (LOCK,))
+        # Lookup is observational: it never recovers, starts or repeats execution.
+        with self.connection() as conn:
             return self.get(conn, role, identifier)

@@ -1,11 +1,15 @@
 {
   "project": "cra-vulnerability-service",
   "region": "us-central1",
-  "coverage_secret": "cra-grading-coverage-token",
-  "coverage_secret_version": "1",
   "resources": {
-    "cpu": "1", "memory": "1Gi", "timeout": "900", "port": "8080",
-    "max": "1", "max-instances": "1", "min": "0", "min-instances": "0",
+    "cpu": "1",
+    "memory": "1Gi",
+    "timeout": "900",
+    "port": "8080",
+    "max": "1",
+    "max-instances": "1",
+    "min": "0",
+    "min-instances": "0",
     "execution-environment": "gen2"
   },
   "system": {
@@ -22,7 +26,6 @@
       "AUTOGRADER_RESET_DATABASE": "cra_grading",
       "AUTOGRADER_RUN_TIMEOUT_SECONDS": "600",
       "AUTOGRADER_COVERAGE_ENABLED": "true",
-      "AUTOGRADER_COVERAGE_TARGETS": "http://127.0.0.1:8080",
       "VULNERABILITY_SOURCE": "fixture",
       "VULNERABILITY_TEST_MODE": "true",
       "VULNERABILITY_TEST_DATABASE": "cra_grading"
@@ -40,8 +43,7 @@
       "AUTOGRADER_DEFAULT_TARGET": "https://cra-phase3-api-456725640364.us-central1.run.app",
       "AUTOGRADER_APPROVED_TARGETS": "https://cra-phase3-api-456725640364.us-central1.run.app",
       "AUTOGRADER_RUN_TIMEOUT_SECONDS": "600",
-      "AUTOGRADER_COVERAGE_ENABLED": "true",
-      "AUTOGRADER_COVERAGE_TARGETS": "https://cra-phase3-api-456725640364.us-central1.run.app"
+      "AUTOGRADER_SETUP_TIMEOUT_SECONDS": "60"
     }
   }
 }

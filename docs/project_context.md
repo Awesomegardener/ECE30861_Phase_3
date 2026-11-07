@@ -1,9 +1,11 @@
-> November 6 autograder publication review: see [review handoff](autograder-fix.md),
-> [measures](coverage-measures.md) and [exact grading rollout](autograder-coverage-deployment.md).
-> Setup 201 is fixed; the original rejected-field request remains unknown.
-> Coverage now has a request-driven grading image/profile with authenticated
-> per-run target measurement and durable reports. Hosted rollout, new service
-> secret/IAM and public resets remain unexecuted. Commit/push/PR are authorized.
+> November 7 conformance correction: the full course Cross-team Testing Interface
+> v0.4.2 and exact rejected `{"target_url":"https://cra-phase3-api-456725640364.us-central1.run.app"}`
+> request are now available. See [current lifecycle and schemas](autograder-interface.md)
+> and [coverage definitions](coverage-measures.md). Tester forwards the same ID/setup,
+> runs once and retrieves system code coverage; reports follow the supplied prose.
+> The earlier peer-schema guesses, cached reruns and model-transition system metric
+> are superseded. Component definitions remain unavailable in the pod prose.
+> Cloud deployment and public resets are not authorized by this conformance task.
 >
 > November 1 Phase 4 update: the current portable suite is **353** cases (157
 > original + 196 Phase 4). See [implementation/results](phase4-pod-update.md),

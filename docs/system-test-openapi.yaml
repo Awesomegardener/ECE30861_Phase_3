@@ -1,0 +1,162 @@
+openapi: 3.1.1
+info:
+  title: Team 2 system cross-team interface
+  version: 0.4.2
+  description: Implements the full Cross-team Testing Interface prose, not the earlier
+    provisional peer adapter. All errors use message/source. Tester results contain
+    every planned ID once; errors require source. Counts are both null when unavailable;
+    otherwise 0 <= covered <= total. Component coverage is unavailable without pod
+    definitions. System coverage uses AC-01 through AC-10. See autograder-interface.md
+    for lifecycle, timing, cleanup and limitations.
+paths:
+  /test/setup:
+    post:
+      summary: Prepare the supplied session without running tests
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrossTeamSetupRequest'
+      responses:
+        '201':
+          description: Prepared session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrossTeamSetupResponse'
+        '400': &id001
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrossTeamError'
+        '404': &id002
+          description: Unknown session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrossTeamError'
+        '409': &id003
+          description: Conflict or report not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrossTeamError'
+        '500': &id004
+          description: Service failure or tester abort
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrossTeamError'
+  /test/report:
+    get:
+      summary: Read source coverage for this prepared session so far
+      parameters:
+      - name: session_id
+        in: query
+        required: true
+        schema: &id005
+          type: string
+          minLength: 1
+      responses:
+        '200':
+          description: System code coverage
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrossTeamReport'
+        '400': *id001
+        '404': *id002
+        '409': *id003
+        '500': *id004
+components:
+  schemas:
+    CrossTeamSessionId: *id005
+    CrossTeamError:
+      type: object
+      required:
+      - message
+      - source
+      properties:
+        message:
+          type: string
+          minLength: 1
+        source:
+          enum:
+          - tester
+          - system
+          - communication
+          - unknown
+      additionalProperties: false
+    CrossTeamMeasure:
+      type: object
+      required:
+      - covered
+      - total
+      - basis
+      properties:
+        covered:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        total:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        basis:
+          type: string
+          minLength: 1
+      allOf:
+      - if:
+          properties:
+            covered:
+              type: 'null'
+        then:
+          properties:
+            total:
+              type: 'null'
+        else:
+          properties:
+            total:
+              type: integer
+    CrossTeamSetupResponse:
+      type: object
+      required:
+      - session_id
+      properties:
+        session_id: *id005
+      additionalProperties: false
+    CrossTeamReport:
+      type: object
+      required:
+      - session_id
+      - coverage
+      properties:
+        session_id: *id005
+        coverage:
+          type: object
+          required:
+          - code
+          properties:
+            code:
+              $ref: '#/components/schemas/CrossTeamMeasure'
+          additionalProperties: false
+      additionalProperties: false
+    CrossTeamSetupRequest:
+      type: object
+      required:
+      - session_id
+      - setup
+      properties:
+        session_id: *id005
+        setup:
+          type: object
+          properties:
+            now:
+              type: string
+              format: date-time
+          additionalProperties: false
+      additionalProperties: false

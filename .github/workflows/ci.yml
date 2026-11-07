@@ -56,6 +56,7 @@ jobs:
       HARNESS_INTEGRATION: "1"
       HARNESS_SYSTEM_URL: http://127.0.0.1:18086
       HARNESS_TESTER_URL: http://127.0.0.1:18087
+      HARNESS_EVIDENCE_DIR: artifacts/autograder
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -64,47 +65,57 @@ jobs:
           cache: pip
           cache-dependency-path: cra-service/requirements*.txt
       - run: python -m pip install -r cra-service/requirements-dev.txt
-      - name: Adapter regressions and specification
+      - name: Prose-contract regressions and both role specifications
         run: |
-          python -m pytest tester-service/tests --ignore=tester-service/tests/test_http.py -q
-          python -c "import yaml; from openapi_spec_validator import validate_spec; validate_spec(yaml.safe_load(open('docs/autograder-openapi.yaml')))"
-      - name: Start disposable system and HTTP tester
+          python -m pytest tester-service/tests --ignore=tester-service/tests/test_http.py --ignore=tester-service/tests/test_grading_http.py -q
+          python scripts/update_suite_plan.py --check
+          python -c "import yaml; from openapi_spec_validator import validate_spec; [validate_spec(yaml.safe_load(open(p))) for p in ['docs/autograder-openapi.yaml','docs/system-test-openapi.yaml']]"
+      - name: Start disposable uninstrumented system and tester
         run: docker compose -f tester-service/docker-compose.test.yml up --build -d --wait --wait-timeout 240
-      - name: Real HTTP suites, concurrency, persistence and timeout checks
+      - name: Ordinary HTTP, Phase 4, database safety and report persistence
         run: |
           python -m pytest tester-service/tests/test_http.py -q --junitxml=artifacts/autograder/http-results.xml
           python scripts/check_phase4_runtime.py --project "$COMPOSE_PROJECT_NAME" --evidence-dir artifacts/autograder
           python scripts/check_osv_runtime.py --project "$COMPOSE_PROJECT_NAME" --evidence-dir artifacts/autograder
           python scripts/check_autograder_runtime.py --project "$COMPOSE_PROJECT_NAME"
-      - name: Verify deployable grading coverage and durable reports
+      - name: Verify exact grader request and genuine server coverage without public access
         env:
-          HARNESS_SYSTEM_PORT: "18146"
-          HARNESS_TESTER_PORT: "18147"
-          HARNESS_SENTINEL_PORT: "18152"
-          HARNESS_OSV_PORT: "18154"
-          HARNESS_SYSTEM_URL: http://127.0.0.1:18146
-          HARNESS_TESTER_URL: http://127.0.0.1:18147
+          HARNESS_SYSTEM_PORT: "18316"
+          HARNESS_TESTER_PORT: "18317"
+          HARNESS_TIMEOUT_PORT: "18318"
+          HARNESS_SYSTEM_URL: http://127.0.0.1:18316
+          HARNESS_TESTER_URL: http://127.0.0.1:18317
+          HARNESS_TIMEOUT_URL: http://127.0.0.1:18318
+          HARNESS_UNAVAILABLE_SYSTEM_URL: http://127.0.0.1:18319
+          HARNESS_CONTRACT_INTEGRATION: "1"
           HARNESS_GRADING_INTEGRATION: "1"
-          HARNESS_EVIDENCE_DIR: artifacts/grading-live
+          HARNESS_EVIDENCE_DIR: artifacts/contract-live
         run: |
-          docker compose -p cra-phase3-autograder-live-ci -f tester-service/docker-compose.test.yml -f tester-service/docker-compose.grading.yml up --build -d --wait --wait-timeout 240
-          python -m pytest tester-service/tests/test_grading_http.py -q --junitxml=artifacts/grading-live/http-results.xml
-          python scripts/check_autograder_runtime.py --grading-profile --project cra-phase3-autograder-live-ci --tester-url http://127.0.0.1:18147 --timeout-port 18148 --unsafe-port 18153 --evidence-dir artifacts/grading-live
+          set -euo pipefail
+          mkdir -p artifacts/contract-live/tls artifacts/contract-live/control
+          umask 077
+          openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj '/CN=Isolated contract test only' -addext 'subjectAltName=DNS:cra-phase3-api-456725640364.us-central1.run.app' -keyout artifacts/contract-live/tls/server.key -out artifacts/contract-live/tls/ca.crt 2> artifacts/contract-live/tls-generation.log
+          export HARNESS_TLS_DIR="$PWD/artifacts/contract-live/tls"
+          export HARNESS_CONTROL_DIR="$PWD/artifacts/contract-live/control"
+          docker compose -p cra-phase3-autograder-contract-ci -f tester-service/docker-compose.test.yml -f tester-service/docker-compose.contract.yml up --build -d --wait --wait-timeout 240 db api tls-target tester timeout-tester contract-access unavailable-system
+          docker network inspect cra-phase3-autograder-contract-ci_default --format '{{.Internal}}' | grep -x true
+          python -m pytest tester-service/tests/test_http.py tester-service/tests/test_grading_http.py -q --junitxml=artifacts/contract-live/results.xml
       - name: Capture adapter logs
         if: always()
         run: |
-          mkdir -p artifacts/autograder artifacts/grading-live
+          mkdir -p artifacts/autograder artifacts/contract-live
           docker compose -f tester-service/docker-compose.test.yml logs --no-color > artifacts/autograder/compose.log
-          docker compose -p cra-phase3-autograder-live-ci -f tester-service/docker-compose.test.yml logs --no-color > artifacts/grading-live/compose.log 2>&1 || true
+          docker compose -p cra-phase3-autograder-contract-ci -f tester-service/docker-compose.test.yml logs --no-color > artifacts/contract-live/compose.log 2>&1 || true
+          rm -f artifacts/contract-live/tls/server.key
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: autograder-results
           path: |
             artifacts/autograder/
-            artifacts/grading-live/
+            artifacts/contract-live/
       - name: Stop disposable services without deleting volumes
         if: always()
         run: |
           docker compose -f tester-service/docker-compose.test.yml down
-          docker compose -p cra-phase3-autograder-live-ci -f tester-service/docker-compose.test.yml down
+          docker compose -p cra-phase3-autograder-contract-ci -f tester-service/docker-compose.test.yml down

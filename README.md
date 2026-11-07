@@ -90,14 +90,17 @@ when provided and defaults to 8080; the existing Compose mappings stay unchanged
 
 ## HTTP autograder services (October 26 history; extended in Phase 4)
 
-Both system and separate `tester-service/` expose discovery, setup, synchronous
-run and report at `/test*`. They now run both portable pytest files (353 cases) and
-persist real per-test outcomes in PostgreSQL, with a shared execution lock.
+The full supplied Cross-team Testing Interface v0.4.2 now governs `/test*`.
+Tester setup accepts `target_url`, forwards the same ID/setup to system setup,
+and waits for 201. The tester runs the two portable pytest files (353 cases) once
+per session and stores the complete results/coverage report. System setup prepares
+state and system report returns code coverage; it does not run the suite.
+Both roles use PostgreSQL session records and a shared execution lock.
 Controls default disabled and require explicit disposable-target authorization.
 System self-tests are restricted to loopback at `PORT`, and adapter resets to
 the dedicated `cra_grading` database. Harness subprocesses block redirects and
-unapproved destinations. Our public target must advertise guarded reset readiness
-before the tester launches destructive checks. The local harness stack uses
+unapproved destinations. Successful target preparation is required before the
+tester launches destructive checks. The local harness stack uses
 separate grading/report databases and ordinary roles in a new isolated volume.
 Both existing URLs are reported deployed by the user. This Phase 4 increment has
 not updated either public service. The GitHub Python blob is not a tester URL.
@@ -105,9 +108,9 @@ not updated either public service. The GitHub Python blob is not a tester URL.
 - [Protocol, safety boundaries and local HTTP verification](docs/autograder-interface.md)
 - [November 6 autograder fix, verified results and rollout handoff](docs/autograder-fix.md)
 - [Exact Cloud Run grading configuration, coverage, costs and reset effects](docs/autograder-coverage-deployment.md)
-- [Isolated server coverage and proposed component/model measures](docs/coverage-measures.md)
+- [Server source coverage, pod acceptance criteria and unavailable component definitions](docs/coverage-measures.md)
 - [November 6 read-only registry and deployment inspection](docs/deployment-inspection-2026-11-06.md)
-- [Separate provisional HTTP contract](docs/autograder-openapi.yaml)
+- [Tester interface contract](docs/autograder-openapi.yaml) and [system test contract](docs/system-test-openapi.yaml)
 - [Console deployment, settings, secrets and registry](docs/deployment-tester-google-cloud.md)
 
 Both Dockerfiles now build from the repository root, for example

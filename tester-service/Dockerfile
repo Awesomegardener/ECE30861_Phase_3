@@ -7,6 +7,7 @@ COPY cra-service/test_api.py cra-service/conftest.py cra-service/http_evidence.p
 COPY cra-service/test_phase4_api.py ./cra-service/
 COPY cra-service/autograder/ ./cra-service/autograder/
 COPY docs/openapi.yaml ./docs/openapi.yaml
+COPY docs/autograder-openapi.yaml docs/system-test-openapi.yaml ./docs/
 COPY fixtures/ ./fixtures/
 COPY tester-service/app.py ./tester-service/app.py
 ARG BUILD_SHA=unknown

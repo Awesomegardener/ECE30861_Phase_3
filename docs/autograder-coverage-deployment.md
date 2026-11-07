@@ -1,5 +1,14 @@
 # Reviewed grading deployment configuration
 
+**Superseded in part by the supplied Cross-team Testing Interface v0.4.2.**
+Do not execute the historical secret-provisioning instructions below. The current
+system uses public `/test/report` by the tester's session ID; private coverage
+controls and the shared coverage secret are retired. The `grading` image,
+`AUTOGRADER_COVERAGE_ENABLED=true` on the system, single worker/replica, existing
+database bindings and resource limits still apply. See the current
+[interface](autograder-interface.md) and [measurements](coverage-measures.md).
+This change performs no cloud rollout or public reset.
+
 November 6, 2026. This is a prepared rollout, **not an executed deployment**.
 Commit/push/PR approval does not authorize cloud builds, new secrets/IAM,
 deployment or public resets. Keep the two registered services and existing SQL
