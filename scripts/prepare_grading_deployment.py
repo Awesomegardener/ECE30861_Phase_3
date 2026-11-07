@@ -37,10 +37,6 @@ def commands(config, system_digest, tester_digest):
             "--args=" + service["args"],
             "--concurrency=" + service["concurrency"],
             "--update-env-vars=" + ",".join(k + "=" + v for k, v in service["environment"].items()),
-            "--update-secrets=AUTOGRADER_COVERAGE_TOKEN="
-            + config["coverage_secret"]
-            + ":"
-            + config["coverage_secret_version"],
         ]
         args += ["--" + k + "=" + v for k, v in config["resources"].items()]
         result[role] = shlex.join(args)

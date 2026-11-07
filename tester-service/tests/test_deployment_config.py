@@ -24,9 +24,12 @@ def test_candidate_commands_preserve_secrets_and_select_deployable_coverage():
             )
             for flag in args
         )
-        assert any(flag.startswith("--update-secrets=AUTOGRADER_COVERAGE_TOKEN=") for flag in args)
+        assert not any("AUTOGRADER_COVERAGE_TOKEN" in flag for flag in args)
         env = config[role]["environment"]
-        assert env["AUTOGRADER_COVERAGE_ENABLED"] == "true"
+        if role == "system":
+            assert env["AUTOGRADER_COVERAGE_ENABLED"] == "true"
+        else:
+            assert env["AUTOGRADER_SETUP_TIMEOUT_SECONDS"] == "60"
         assert int(config[role]["concurrency"]) >= 2
     assert "--args=-m,autograder.grading_server" in shlex.split(commands["system"])
     assert "cra-api-grading@sha256:" in commands["system"]

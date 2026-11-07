@@ -8,16 +8,104 @@ import yaml  # type: ignore[import-untyped]
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "options", "trace"}
 
 
-def unavailable_coverage():
+def unavailable_coverage(code_reason=None):
     reasons = {
-        "code": "Target-side source instrumentation and revision are not available to this HTTP runner",
-        "component": "No attributed server traces supplied for this run; Team 2's proposed mapping is not grader-confirmed",
-        "system": "No attributed server execution and behavioral transition witnesses supplied for this run",
+        "code": code_reason or "Source instrumentation unavailable on this system instance",
+        "component": "Pod Phase 2 sections 2/7 list capabilities and implementation choices, but no shared component denominator and exercise rules; unavailable",
+        "system": "Pod AC-01 through AC-10; no complete scenario dispatch evidence available",
         "http_operations": "No HTTP evidence collected for this session",
     }
     return {
-        name: {"status": "unavailable", "percent": None, "reason": reason}
+        name: {
+            "covered": None,
+            "total": None,
+            "basis": reason,
+            "status": "unavailable",
+            "percent": None,
+            "reason": reason,
+        }
         for name, reason in reasons.items()
+    }
+
+
+def acceptance_coverage(exchanges):
+    """Pod Q4.1 scenarios, counted from dispatched inputs, never pass rates.
+
+    Each witness is (canonical test-name fragment, method, pod path, minimum
+    dispatches). Complete required scenarios must all appear. AC-08/09/10 have
+    no suite witnesses, so remain uncovered in the denominator of ten.
+    """
+    sbom = "/api/v1/releases/{releaseId}/sbom"
+    release = "/api/v1/releases"
+    cve = "/api/v1/vulnerabilities/{cveId}/affected-releases"
+    incident = "/api/v1/incidents"
+    rules = {
+        "AC-01": [
+            ("test_ac01_shared_release_cases", "POST", release, 4),
+            ("test_ac01_support_boundary", "GET", release + "/{releaseId}", 3),
+        ],
+        "AC-02": [
+            ("test_ac02_shared_25_components_are_isolated", "PUT", sbom, 1),
+            (
+                "test_ac02_shared_25_components_are_isolated",
+                "GET",
+                release + "/{releaseId}/components",
+                3,
+            ),
+        ],
+        "AC-03": [
+            ("test_ac03_invalid_sbom_never_changes_inventory[empty-" + kind + "]", "PUT", sbom, 1)
+            for kind in ["malformed", "bomFormat", "plaintext"]
+        ]
+        + [("test_ac03_unknown_release_stores_nothing", "PUT", sbom, 1)],
+        "AC-04": [
+            ("test_ac04_five_cves_exact_precision_recall_grouping_and_latency", "GET", cve, 5)
+        ],
+        "AC-05": [("test_ac05_known_unaffected_unknown_and_outage_are_distinct", "GET", cve, 3)],
+        "AC-06": [
+            (
+                "test_ac06_create_read_preserves_awareness_actor_classification_rationale",
+                "POST",
+                incident,
+                2,
+            ),
+            (
+                "test_ac06_create_read_preserves_awareness_actor_classification_rationale",
+                "GET",
+                incident + "/{incidentId}",
+                2,
+            ),
+            ("test_ac06_missing_incident_fields[rationale]", "POST", incident, 1),
+            ("test_ac06_invalid_incident_fields[classification-unknown]", "POST", incident, 1),
+        ],
+        "AC-07": [
+            ("test_ac07_exact_acceptance_sequence_and_independent_statuses", method, path, count)
+            for method, path, count in [
+                ("POST", incident, 1),
+                ("POST", incident + "/{incidentId}/submissions", 2),
+                ("PATCH", incident + "/{incidentId}", 1),
+                ("GET", incident + "/{incidentId}", 1),
+            ]
+        ],
+    }
+    covered = []
+    for criterion, witnesses in rules.items():
+        if all(
+            sum(
+                selector in e.get("test_id", "")
+                and e.get("method") == method
+                and e.get("path") == path
+                for e in exchanges
+            )
+            >= minimum
+            for selector, method, path, minimum in witnesses
+        ):
+            covered.append(criterion)
+    return {
+        "covered": len(covered),
+        "total": 10,
+        "basis": "Pod Phase 2 Q4.1 AC-01–AC-10; coverage means all mapped scenario inputs dispatched, irrespective of pass/fail. AC-08/09/10 are not exercised by this suite; manual review is not claimed.",
+        "criteria": covered,
     }
 
 

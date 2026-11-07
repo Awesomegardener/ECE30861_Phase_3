@@ -1,22 +1,21 @@
-"""Restart/timeout/interruption checks ONLY in a dedicated disposable Compose project."""
+"""Persistence and reset-safety checks in a dedicated disposable Compose project.
+
+Abort/report behavior is exercised by test_http.py. A hard service crash is
+allowed to leave no retrievable report by the course interface; lookup must not
+invent or mutate a completed report to recover one.
+"""
 
 import argparse
 import json
 import re
 import subprocess
-import sys
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import requests
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "cra-service"))
-from autograder.runner import EXPECTED_TESTS  # noqa: E402
-
-COMPOSE = ROOT / "tester-service/docker-compose.test.yml"
 
 
 def project_name(value):
@@ -29,18 +28,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", required=True, type=project_name)
     parser.add_argument("--docker", default="docker")
-    parser.add_argument(
-        "--grading-profile",
-        action="store_true",
-        help="Use the authenticated request-driven coverage override",
-    )
     parser.add_argument("--tester-url", default="http://127.0.0.1:18087")
-    parser.add_argument("--timeout-port", type=int, default=18088)
     parser.add_argument("--unsafe-port", type=int, default=18093)
     parser.add_argument("--evidence-dir", type=Path, default=ROOT / "artifacts/autograder")
     args = parser.parse_args()
     assert re.fullmatch(r"http://127\.0\.0\.1:[0-9]+", args.tester_url)
-    observations = []
 
     def docker(*arguments):
         return subprocess.check_output(
@@ -48,16 +40,28 @@ def main():
         ).strip()
 
     def compose(*arguments):
-        override = (
-            ["-f", str(ROOT / "tester-service/docker-compose.grading.yml")]
-            if args.grading_profile
-            else []
+        return docker(
+            "compose",
+            "-p",
+            args.project,
+            "-f",
+            str(ROOT / "tester-service/docker-compose.test.yml"),
+            *arguments,
         )
-        return docker("compose", "-p", args.project, "-f", str(COMPOSE), *override, *arguments)
 
-    def call(base, method, path, **kwargs):
+    def inspect(service):
+        config = json.loads(docker("inspect", compose("ps", "-q", service)))[0]
+        assert config["Config"]["Labels"]["com.docker.compose.project"] == args.project
+        return config
+
+    def origin(config):
+        port = config["NetworkSettings"]["Ports"]["8080/tcp"][0]
+        assert port["HostIp"] == "127.0.0.1"
+        return "http://127.0.0.1:" + port["HostPort"]
+
+    def call(base, method, path, expected=200, **kwargs):
         response = requests.request(method, base + path, timeout=660, **kwargs)
-        response.raise_for_status()
+        assert response.status_code == expected, response.text[:1000]
         return response.json()
 
     def wait(base):
@@ -66,171 +70,78 @@ def main():
             try:
                 call(base, "GET", "/health/ready")
                 return
-            except requests.RequestException:
+            except (requests.RequestException, AssertionError):
                 time.sleep(0.25)
-        raise TimeoutError("Isolated tester readiness timed out")
+        raise TimeoutError("Isolated service readiness timed out")
 
-    # Check provenance before restarting/stopping anything.
-    tester = compose("ps", "-q", "tester")
-    config = json.loads(docker("inspect", tester))[0]
-    assert config["Config"]["Labels"]["com.docker.compose.project"] == args.project
-    environment = dict(item.split("=", 1) for item in config["Config"]["Env"] if "=" in item)
-    assert environment["AUTOGRADER_DEFAULT_TARGET"] == "http://api:8080"
+    tester, api = inspect("tester"), inspect("api")
+    assert origin(tester) == args.tester_url
+    api_base = origin(api)
+    env = dict(item.split("=", 1) for item in api["Config"]["Env"] if "=" in item)
     assert (
-        environment["AUTOGRADER_DATABASE_URL"]
-        == "postgresql://cra_harness:local_report_only@db:5432/cra_autograder"
+        env["DATABASE_URL"] == "postgresql://cra_grading_app:local_grading_only@db:5432/cra_grading"
     )
-    port = config["NetworkSettings"]["Ports"]["8080/tcp"][0]
-    assert port["HostIp"] == "127.0.0.1"
-    assert args.tester_url == "http://127.0.0.1:" + port["HostPort"]
-    base = args.tester_url
+    assert env["AUTOGRADER_RESET_DATABASE"] == "cra_grading"
 
     def sql(database, query):
         return json.loads(
             compose("exec", "-T", "db", "psql", "-U", "cra_test", "-d", database, "-tAc", query)
         )
 
-    roles = sql(
-        "cra_test",
-        """SELECT json_agg(json_build_object('name', rolname,
-        'super', rolsuper, 'createdb', rolcreatedb, 'createrole', rolcreaterole,
-        'replication', rolreplication)) FROM pg_roles
-        WHERE rolname IN ('cra_grading_app', 'cra_harness')""",
-    )
-    assert len(roles) == 2 and all(
-        not any(v for k, v in role.items() if k != "name") for role in roles
-    )
-    cross_access = sql(
+    assert sql(
         "cra_test",
         """SELECT json_build_array(
         has_database_privilege('cra_harness','cra_grading','CONNECT'),
         has_database_privilege('cra_grading_app','cra_autograder','CONNECT'))""",
+    ) == [False, False]
+    roles = sql(
+        "cra_test",
+        """SELECT json_agg(json_build_object('name',rolname,'super',rolsuper,
+        'createdb',rolcreatedb,'createrole',rolcreaterole,'replication',rolreplication))
+        FROM pg_roles WHERE rolname IN ('cra_grading_app','cra_harness')""",
     )
-    assert cross_access == [False, False]
-    assert sql(
-        "cra_grading",
-        """SELECT json_build_array(
-        has_schema_privilege('cra_grading_app','public','USAGE'),
-        has_schema_privilege('cra_grading_app','public','CREATE'))""",
-    ) == [True, True]
-    observations.append(
-        {
-            "check": "separate databases and ordinary roles have intended schema access and no cross-database CONNECT",
-            "passed": True,
-        }
+    assert len(roles) == 2 and all(
+        not any(v for k, v in row.items() if k != "name") for row in roles
     )
+    observations = [{"check": "isolated databases and ordinary roles", "passed": True}]
 
-    # Reuse actual saved complete result from the HTTP integration tests.
     report = json.loads((args.evidence_dir / "tester-report.json").read_text())
-    assert report["result"] == "pass" and report["summary"]["passed"] == EXPECTED_TESTS
-    route = "/test/report?session_id=" + report["session_id"]
-    before = call(base, "GET", route)
-    api_id = compose("ps", "-q", "api")
-    api_config = json.loads(docker("inspect", api_id))[0]
-    api_environment = dict(
-        value.split("=", 1) for value in api_config["Config"]["Env"] if "=" in value
+    assert len(report["results"]) == 353 and all(
+        item["outcome"] == "pass" for item in report["results"]
     )
-    assert (
-        api_environment["DATABASE_URL"]
-        == "postgresql://cra_grading_app:local_grading_only@db:5432/cra_grading"
+    query = {"session_id": report["session_id"]}
+    before = call(args.tester_url, "GET", "/test/report", params=query)
+    assert before == report
+    call(
+        api_base,
+        "POST",
+        "/test/setup",
+        201,
+        json={"session_id": "reset-" + uuid.uuid4().hex, "setup": {}},
     )
-    assert api_environment["AUTOGRADER_RESET_DATABASE"] == "cra_grading"
-    api_port = api_config["NetworkSettings"]["Ports"]["8080/tcp"][0]
-    assert api_port["HostIp"] == "127.0.0.1"
-    api_base = "http://127.0.0.1:" + api_port["HostPort"]
-    call(api_base, "POST", "/test/setup")
-    assert call(base, "GET", route) == before
+    assert call(args.tester_url, "GET", "/test/report", params=query) == before
+    compose("restart", "tester")
+    wait(args.tester_url)
+    assert call(args.tester_url, "GET", "/test/report", params=query) == before
+    call(args.tester_url, "POST", "/test/run", 409, json=query)
     observations.append(
         {
-            "check": "domain reset cannot erase the separate database's completed report",
+            "check": "immutable terminal report and consumed run survive reset and tester restart",
             "passed": True,
         }
     )
-    compose("restart", "tester")
-    wait(base)
-    assert call(base, "GET", route) == before
-    observations.append({"check": "complete report survives tester restart", "passed": True})
 
-    # Kill a real active acceptance run; the durable record must recover as error.
-    identifier = call(base, "POST", "/test/setup")["session_id"]
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        running = pool.submit(call, base, "POST", "/test/run", json={"session_id": identifier})
-        deadline = time.monotonic() + 15
-        while time.monotonic() < deadline:
-            current = call(base, "GET", "/test/report?session_id=" + identifier)
-            if current["running"]:
-                break
-            time.sleep(0.05)
-        assert current["running"]
-        compose("kill", "tester")
-        try:
-            running.result(timeout=15)
-        except requests.RequestException:
-            pass
-        else:
-            raise AssertionError("Killed run unexpectedly returned success")
-    compose("start", "tester")
-    wait(base)
-    recovered = call(base, "GET", "/test/report?session_id=" + identifier)
-    assert recovered["status"] == "completed" and recovered["result"] == "error"
-    assert recovered["error"] and not recovered["running"]
-    assert call(base, "GET", route) == before
-    observations.append(
-        {"check": "hard interruption recovered, old completed report intact", "passed": True}
+    # Deliberately wrong reset approval must not erase any grading data.
+    release = call(
+        api_base,
+        "POST",
+        "/api/v1/releases",
+        201,
+        json={"product": "Preserve", "version": uuid.uuid4().hex, "support_end_date": "2099-01-01"},
+        headers={"X-User-Id": "isolated-safety-test"},
     )
-
-    # A separate instance still shares the same metadata lock and reports.
-    name = args.project + "-timeout-" + uuid.uuid4().hex[:8]
-    try:
-        compose(
-            "run",
-            "--no-deps",
-            "-d",
-            "--name",
-            name,
-            "-p",
-            f"127.0.0.1:{args.timeout_port}:9090",
-            "-e",
-            "PORT=9090",
-            "-e",
-            "AUTOGRADER_RUN_TIMEOUT_SECONDS=1",
-            "tester",
-        )
-        timeout_base = f"http://127.0.0.1:{args.timeout_port}"
-        wait(timeout_base)
-        assert call(timeout_base, "GET", route) == before
-        identifier = call(timeout_base, "POST", "/test/setup")["session_id"]
-        outcome = call(timeout_base, "POST", "/test/run", json={"session_id": identifier})
-        assert outcome["result"] == "error" and outcome["summary"]["passed"] == 0
-        result = call(base, "GET", "/test/report?session_id=" + identifier)
-        assert result["error"].startswith("TimeoutError")
-        # Inspect cmdlines via a separate Python process; exclude this check itself.
-        child_check = "from pathlib import Path; import os; print(sum(b'pytest' in p.read_bytes() for p in Path('/proc').glob('[0-9]*/cmdline') if p.parent.name != str(os.getpid())))"
-        assert docker("exec", name, "python", "-c", child_check) == "0"
-        observations.append(
-            {
-                "check": "real subprocess timeout terminates child and persists error across instances",
-                "passed": True,
-            }
-        )
-    finally:
-        # Stop only the checked newly created container. No removal/volume deletion.
-        docker("stop", name)
-
-    # A wrong approval name cannot unlock reset, even with the right grading DSN.
     name = args.project + "-unsafe-" + uuid.uuid4().hex[:8]
     try:
-        release = call(
-            api_base,
-            "POST",
-            "/api/v1/releases",
-            json={
-                "product": "Must survive rejected adapter setup",
-                "version": uuid.uuid4().hex,
-                "support_end_date": "2099-01-01",
-            },
-            headers={"X-User-Id": "isolated-safety-test"},
-        )
         compose(
             "run",
             "--no-deps",
@@ -243,23 +154,22 @@ def main():
             "AUTOGRADER_RESET_DATABASE=cra_db",
             "api",
         )
-        unsafe_base = f"http://127.0.0.1:{args.unsafe_port}"
-        wait(unsafe_base)
-        assert call(unsafe_base, "GET", "/test")["reset_ready"] is False
-        response = requests.post(unsafe_base + "/test/setup", timeout=10)
-        assert response.status_code == 503 and response.json()["error"]["code"] == "RESET_DISABLED"
+        unsafe = f"http://127.0.0.1:{args.unsafe_port}"
+        wait(unsafe)
+        error = call(
+            unsafe, "POST", "/test/setup", 500, json={"session_id": uuid.uuid4().hex, "setup": {}}
+        )
+        assert error["source"] == "system" and error["message"]
         assert call(api_base, "GET", "/api/v1/releases/" + release["release_id"]) == release
         observations.append(
             {
-                "check": "real HTTP setup with retained database approval is refused without deleting the new grading release",
+                "check": "incorrect reset approval refuses setup without deleting domain data",
                 "passed": True,
             }
         )
     finally:
         docker("stop", name)
-
-    destination = args.evidence_dir / "runtime-results.json"
-    destination.write_text(json.dumps(observations, indent=2), encoding="utf-8")
+    (args.evidence_dir / "runtime-results.json").write_text(json.dumps(observations, indent=2))
     print(json.dumps(observations, indent=2))
 
 

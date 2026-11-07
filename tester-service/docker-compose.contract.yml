@@ -1,0 +1,94 @@
+# Exact grader target_url, isolated entirely inside a fresh internal network.
+# Generate the local certificate first; never use this CA outside this test stack.
+x-tls-entrypoint: &tls-entrypoint
+  - /bin/sh
+  - -c
+  - >-
+    python -c "import certifi; open(certifi.where(),'a').write(open('/tls/ca.crt').read())" &&
+    exec uvicorn app:app --host 0.0.0.0 --port 8080 --timeout-graceful-shutdown 5
+services:
+  api:
+    ports: !reset []
+    build:
+      target: grading
+    environment:
+      AUTOGRADER_COVERAGE_ENABLED: "true"
+  tls-target:
+    image: python:3.11-slim
+    command: ["python", "/tls_target.py"]
+    volumes:
+      - ./tests/tls_target.py:/tls_target.py:ro
+      - ${HARNESS_TLS_DIR:?Generate the isolated test CA}:/tls:ro
+      - ${HARNESS_CONTROL_DIR:?Choose a fresh test control directory}:/state
+    networks:
+      default:
+        aliases: [cra-phase3-api-456725640364.us-central1.run.app]
+    depends_on:
+      api:
+        condition: service_healthy
+  tester:
+    ports: !reset []
+    entrypoint: *tls-entrypoint
+    environment:
+      AUTOGRADER_APPROVED_TARGETS: https://cra-phase3-api-456725640364.us-central1.run.app,http://api:8080
+    volumes:
+      - ${HARNESS_TLS_DIR:?Generate the isolated test CA}:/tls:ro
+    depends_on:
+      tls-target:
+        condition: service_started
+  timeout-tester:
+    build:
+      context: ..
+      dockerfile: tester-service/Dockerfile
+    entrypoint: *tls-entrypoint
+    environment:
+      AUTOGRADER_DATABASE_URL: postgresql://cra_harness:local_report_only@db:5432/cra_autograder
+      AUTOGRADER_ENABLED: "true"
+      AUTOGRADER_ALLOW_RESET: "true"
+      AUTOGRADER_APPROVED_TARGETS: https://cra-phase3-api-456725640364.us-central1.run.app
+      AUTOGRADER_RUN_TIMEOUT_SECONDS: "30"
+    volumes:
+      - ${HARNESS_TLS_DIR:?Generate the isolated test CA}:/tls:ro
+    depends_on:
+      tls-target:
+        condition: service_started
+  contract-access:
+    image: python:3.11-slim
+    command: ["python", "/access_proxy.py"]
+    volumes:
+      - ./tests/access_proxy.py:/access_proxy.py:ro
+    ports:
+      - "127.0.0.1:${HARNESS_SYSTEM_PORT:-18316}:9016"
+      - "127.0.0.1:${HARNESS_TESTER_PORT:-18317}:9017"
+      - "127.0.0.1:${HARNESS_TIMEOUT_PORT:-18318}:9018"
+      - "127.0.0.1:${HARNESS_UNAVAILABLE_PORT:-18319}:9019"
+    networks: [default, access]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9017/test',timeout=3)"]
+      interval: 2s
+      timeout: 4s
+      retries: 30
+  unavailable-system:
+    build:
+      context: ..
+      dockerfile: cra-service/Dockerfile
+      target: grading
+    environment:
+      DATABASE_URL: postgresql://cra_grading_app:local_grading_only@127.0.0.1:1/cra_grading
+      AUTOGRADER_DATABASE_URL: postgresql://cra_harness:local_report_only@db:5432/cra_autograder
+      AUTOGRADER_ENABLED: "true"
+      AUTOGRADER_ALLOW_RESET: "true"
+      AUTOGRADER_RESET_DATABASE: cra_grading
+      AUTOGRADER_COVERAGE_ENABLED: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/live',timeout=3)"]
+      interval: 2s
+      timeout: 4s
+      retries: 30
+networks:
+  default:
+    internal: true
+  access: {}

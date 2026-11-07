@@ -1,14 +1,12 @@
 """No network: fake transport proves redirects and alternate targets never send."""
 
 import io
-from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
 import requests
 from autograder.config import TEAM2, TEAM6, HarnessError, Settings
 from autograder.pytest_guard import guard_requests, pytest_configure
-from autograder.runner import Runner, verify_public_target
 from requests.adapters import BaseAdapter
 
 APPROVED = "https://approved.invalid"
@@ -117,67 +115,4 @@ def test_system_refuses_remote_or_wrong_port_even_if_configured_and_allowlisted(
     monkeypatch.setenv("AUTOGRADER_APPROVED_TARGETS", remote)
     with pytest.raises(HarnessError) as error:
         Settings.environment("system").authorize()
-    assert error.value.status == 503
-
-
-def test_runner_reauthorizes_before_starting_child(enabled_environment, monkeypatch):
-    settings = Settings.environment("system")
-    monkeypatch.setattr(
-        "autograder.runner.subprocess.Popen",
-        lambda *a, **k: pytest.fail("Unauthorized child started"),
-    )
-    with pytest.raises(HarnessError):
-        Runner(
-            replace(settings, default_target=TEAM2, approved_targets=frozenset({TEAM2}))
-        ).execute(TEAM2, lambda: None)
-
-
-@pytest.mark.parametrize(
-    "status,data",
-    [
-        (404, {}),
-        (307, {}),
-        (200, {}),
-        (200, {"role": "system", "reset_ready": False}),
-        (200, {"role": "tester", "reset_ready": True}),
-    ],
-)
-def test_our_public_url_refuses_old_or_unready_course_revisions(monkeypatch, status, data):
-    calls = []
-
-    def get(session, url, **kwargs):
-        calls.append((url, kwargs))
-        return SimpleNamespace(status_code=status, json=lambda: data)
-
-    monkeypatch.setattr(requests.Session, "get", get)
-    with pytest.raises(HarnessError):
-        verify_public_target(TEAM2)
-    assert calls == [(TEAM2 + "/test", {"timeout": 5, "allow_redirects": False})]
-
-
-def test_our_public_url_accepts_only_the_guarded_system_readiness_signal(monkeypatch):
-    monkeypatch.setattr(
-        requests.Session,
-        "get",
-        lambda *a, **k: SimpleNamespace(
-            status_code=200, json=lambda: {"role": "system", "reset_ready": True}
-        ),
-    )
-    verify_public_target(TEAM2)
-
-
-def test_team2_only_readiness_extension_does_not_change_the_peer_protocol(monkeypatch):
-    monkeypatch.setattr(
-        requests.Session, "get", lambda *a, **k: pytest.fail("Unexpected peer network request")
-    )
-    verify_public_target(TEAM6)
-
-
-def test_old_public_revision_cannot_start_a_pytest_child(enabled_environment, monkeypatch):
-    monkeypatch.setattr(requests.Session, "get", lambda *a, **k: SimpleNamespace(status_code=404))
-    monkeypatch.setattr(
-        "autograder.runner.subprocess.Popen",
-        lambda *a, **k: pytest.fail("Old course revision reached pytest"),
-    )
-    with pytest.raises(HarnessError):
-        Runner(Settings.environment("tester")).execute(TEAM2, lambda: None)
+    assert error.value.status == 500

@@ -1,7 +1,6 @@
 """Explicit deployment authorization for destructive acceptance checks."""
 
 import os
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
@@ -21,14 +20,15 @@ def system_target():
 
 
 class HarnessError(Exception):
-    def __init__(self, status, code, message):
+    def __init__(self, status, code, message, source=None):
         self.status, self.code, self.message = status, code, message
+        self.source = source
         super().__init__(message)
 
 
 def normalize_target(value):
     if not isinstance(value, str) or not value or value != value.strip():
-        raise HarnessError(400, "INVALID_TARGET", "target_base_url must be an approved HTTP URL")
+        raise HarnessError(400, "INVALID_TARGET", "target_url must be an approved HTTP URL")
     try:
         parts = urlsplit(value)
         port = parts.port
@@ -52,10 +52,8 @@ def normalize_target(value):
 
 
 def session_id(value):
-    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", value):
-        raise HarnessError(
-            400, "INVALID_REQUEST", "session_id must contain 1-128 letters, digits, _, . or -"
-        )
+    if not isinstance(value, str) or not value:
+        raise HarnessError(400, "INVALID_REQUEST", "session_id must be a nonempty string")
     return value
 
 
@@ -73,6 +71,7 @@ class Settings:
     coverage_enabled: bool = False
     coverage_targets: frozenset[str] = frozenset()
     coverage_token: str = field(default="", repr=False)
+    setup_timeout: int = 60
 
     @classmethod
     def environment(cls, role):
@@ -82,6 +81,9 @@ class Settings:
         timeout = int(os.getenv("AUTOGRADER_RUN_TIMEOUT_SECONDS", "600"))
         if not 1 <= timeout <= 1800:
             raise ValueError("AUTOGRADER_RUN_TIMEOUT_SECONDS must be between 1 and 1800")
+        setup_timeout = int(os.getenv("AUTOGRADER_SETUP_TIMEOUT_SECONDS", "60"))
+        if not 1 <= setup_timeout <= 1800:
+            raise ValueError("AUTOGRADER_SETUP_TIMEOUT_SECONDS must be between 1 and 1800")
         configured = cls(
             role=role,
             enabled=os.getenv("AUTOGRADER_ENABLED", "false").lower() == "true",
@@ -94,6 +96,7 @@ class Settings:
             ),
             reset_database=os.getenv("AUTOGRADER_RESET_DATABASE", ""),
             timeout=timeout,
+            setup_timeout=setup_timeout,
             coverage_enabled=os.getenv("AUTOGRADER_COVERAGE_ENABLED", "false").lower() == "true",
             coverage_targets=frozenset(
                 normalize_target(value)
@@ -102,19 +105,14 @@ class Settings:
             ),
             coverage_token=os.getenv("AUTOGRADER_COVERAGE_TOKEN", ""),
         )
-        if configured.coverage_enabled:
-            if len(configured.coverage_token) < 32 or not configured.coverage_targets:
-                raise ValueError("Coverage requires a service secret and explicit coverage origins")
-            if not configured.coverage_targets <= configured.approved_targets:
-                raise ValueError("Coverage origins must also be explicitly approved test targets")
         return configured
 
     def authorize(self, target=None):
         if not self.enabled or not self.database_url:
-            raise HarnessError(503, "NOT_CONFIGURED", "Autograder controls are not configured")
+            raise HarnessError(500, "NOT_CONFIGURED", "Autograder controls are not configured")
         if self.role == "system" and self.default_target != system_target():
             raise HarnessError(
-                503,
+                500,
                 "NOT_CONFIGURED",
                 "System test target must be loopback at this container's PORT",
             )
@@ -125,6 +123,6 @@ class Settings:
             raise HarnessError(400, "INVALID_TARGET", "System sessions can test only this system")
         if not self.allow_reset:
             raise HarnessError(
-                503, "RESET_DISABLED", "Disposable-target reset authorization is disabled"
+                500, "RESET_DISABLED", "Disposable-target reset authorization is disabled"
             )
         return target

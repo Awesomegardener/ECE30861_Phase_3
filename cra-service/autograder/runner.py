@@ -12,13 +12,8 @@ import time
 import xml.etree.ElementTree as ET
 from collections import Counter
 from pathlib import Path
-from typing import Any
 
 from http_evidence import redact_text
-
-from .config import TEAM2, HarnessError
-from .coverage import operation_coverage, unavailable_coverage
-from .coverage_client import CoverageClient
 
 SUITE_FILES = ("cra-service/test_api.py", "cra-service/test_phase4_api.py")
 EXPECTED_TESTS = 353  # 157 original Phase 3 + 196 Phase 4 cases; checked against collection.
@@ -162,35 +157,31 @@ class Runner:
     def __init__(self, settings):
         self.settings = settings
 
-    def execute(self, target, heartbeat, session=None):
-        target = self.settings.authorize(target)
-        verify_public_target(target)
-        client, window = None, None
-        if self.settings.coverage_enabled and target in self.settings.coverage_targets:
-            if not session:
-                raise HarnessError(
-                    503, "COVERAGE_UNAVAILABLE", "A report session is required for coverage"
-                )
-            client = CoverageClient(self.settings, target, session)
-        try:
-            if client:
-                window = client.start()
-            result = self._execute(target, heartbeat, window)
-            if client:
-                try:
-                    result["coverage"].update(client.finish(result))
-                except HarnessError as exc:
-                    # Retain genuine test outcomes even when measurement fails.
-                    result.update(result="error", error=exc.message)
-            return result
-        finally:
-            if client:
-                client.abort()
+    def aborted_report(self, target, identifier, message):
+        from .reporting import report_body
 
-    def _execute(self, target, heartbeat, window=None):
-        with tempfile.TemporaryDirectory(prefix="cra-acceptance-") as temporary:
+        plan = json.loads(
+            (self.settings.root / "cra-service/autograder/suite-plan.json").read_text()
+        )["tests"]
+        results = [
+            {
+                "test_id": test,
+                "outcome": "skip",
+                "message": "Test was not executed because the tester aborted.",
+            }
+            for test in plan
+        ]
+        return report_body(target, identifier, results, message=message)
+
+    def execute_suite(self, target, identifier, deadline, heartbeat):
+        from .client import TargetClient
+        from .coverage import acceptance_coverage
+        from .reporting import report_body, results_from_journal, suite_plan
+
+        planned = suite_plan(self.settings.root)
+        with tempfile.TemporaryDirectory(prefix="cra-cross-team-") as temporary:
             directory = Path(temporary)
-            xml = directory / "results.xml"
+            journal = directory / "results.jsonl"
             command = [
                 sys.executable,
                 "-X",
@@ -210,103 +201,74 @@ class Runner:
                 "--capture-http-bodies",
                 "--evidence-dir",
                 str(directory),
-                "--junitxml",
-                str(xml),
             ]
-            environment = os.environ.copy()
-            # The child needs HTTP access only: do not inherit database secrets.
-            for key in list(environment):
-                if any(
-                    term in key.upper()
+            environment = {
+                k: v
+                for k, v in os.environ.items()
+                if not any(
+                    term in k.upper()
                     for term in ("DATABASE", "PASSWORD", "SECRET", "TOKEN", "CREDENTIAL")
-                ):
-                    environment.pop(key)
-            environment.pop("PYTEST_ADDOPTS", None)
-            environment.pop("TESTED_COMMIT_SHA", None)
-            environment.update(PYTEST_DISABLE_PLUGIN_AUTOLOAD="1", PYTHONDONTWRITEBYTECODE="1")
-            environment["PYTHONPATH"] = str(self.settings.root / "cra-service")
-            environment["CRA_HARNESS_TARGET"] = target
-            if window:
-                environment["CRA_COVERAGE_RUN_ID"] = window["run_id"]
-                environment["CRA_COVERAGE_REQUEST_TOKEN"] = window["request_token"]
-            with (directory / "pytest.log").open("w", encoding="utf-8") as output:
-                process = subprocess.Popen(
-                    command,
-                    cwd=self.settings.root,
-                    env=environment,
-                    stdout=output,
-                    stderr=subprocess.STDOUT,
-                    start_new_session=os.name == "posix",
                 )
-                with CHILD_LOCK:
-                    CHILDREN.add(process)
-                try:
-                    deadline = time.monotonic() + self.settings.timeout
+            }
+            for key in ("PYTEST_ADDOPTS", "TESTED_COMMIT_SHA"):
+                environment.pop(key, None)
+            environment.update(
+                PYTEST_DISABLE_PLUGIN_AUTOLOAD="1",
+                PYTHONDONTWRITEBYTECODE="1",
+                PYTHONPATH=str(self.settings.root / "cra-service"),
+                CRA_HARNESS_TARGET=target,
+                CRA_HARNESS_SESSION_ID=identifier,
+                CRA_HARNESS_JOURNAL=str(journal),
+            )
+            message = None
+            process = None
+            try:
+                with (directory / "pytest.log").open("w") as output:
+                    process = subprocess.Popen(
+                        command,
+                        cwd=self.settings.root,
+                        env=environment,
+                        stdout=output,
+                        stderr=subprocess.STDOUT,
+                        start_new_session=os.name == "posix",
+                    )
+                    with CHILD_LOCK:
+                        CHILDREN.add(process)
                     while process.poll() is None:
                         if time.monotonic() >= deadline:
-                            raise TimeoutError("Acceptance suite exceeded its subprocess timeout")
+                            raise TimeoutError(
+                                "Tester run exceeded its registered total time limit"
+                            )
                         heartbeat()
                         try:
-                            process.wait(timeout=0.5)
+                            process.wait(timeout=min(0.1, max(0.01, deadline - time.monotonic())))
                         except subprocess.TimeoutExpired:
                             pass
-                finally:
+                if process.returncode not in {0, 1}:
+                    message = "Tester process aborted before completing the planned suite"
+            except TimeoutError as exc:
+                message = str(exc)
+            except Exception:
+                message = "Tester execution was interrupted"
+            finally:
+                if process is not None:
                     terminate(process)
                     with CHILD_LOCK:
                         CHILDREN.discard(process)
-            result = parse_junit(xml, process.returncode)
-            result["coverage"] = unavailable_coverage()
-            result["runner_build_sha"] = os.getenv("BUILD_SHA") or None
-            result["tested_commit_sha"] = None  # No claim about a remote target's deployed SHA.
-            # Keep real redacted HTTP examples with test ids/statuses/UTC times.
+            results, complete = results_from_journal(planned, journal, aborted=True)
+            if not complete and not message:
+                message = "Tester did not produce every planned result"
+            body = report_body(target, identifier, results, message=message)
             evidence = next(directory.glob("http-evidence-*.json"), None)
             if evidence:
-                bundle = json.loads(evidence.read_text(encoding="utf-8"))
-                result["coverage"]["http_operations"] = operation_coverage(
-                    bundle["exchanges"], self.settings.root / "docs/openapi.yaml"
-                )
-                result["evidence"] = dict(run=bundle["run"], exchanges=bundle["exchanges"][:8])
-                examples: dict[tuple[str, str], Any] = {}
-                for exchange in bundle["exchanges"]:
-                    node_id = exchange.get("test_id") or ""
-                    file, _, name = node_id.partition("::")
-                    # Minimal Docker images and host pytest select different roots.
-                    examples[(file.replace("\\", "/").rsplit("/", 1)[-1], name)] = exchange
-                for check in result["checks"]:
-                    module = check["id"].partition("::")[0].rsplit(".", 1)[-1]
-                    example = examples.get((module + ".py", check["title"]))
-                    if example:
-                        check["request"] = json.dumps(example["request"])[:3000]
-                        check["response"] = json.dumps(
-                            dict(status=example["status"], response=example["response"])
-                        )[:3000]
-            return result
-
-
-def verify_public_target(target):
-    """Do not send legacy reset calls to our public URL before its DB migration.
-
-    This Team 2-only readiness signal is not imposed on Team 6's independent
-    interface. Their approved target still requires a coordinated reset window.
-    """
-    if target != TEAM2:
-        return
-    import requests  # type: ignore[import-untyped]
-
-    try:
-        with requests.Session() as session:
-            session.trust_env = False
-            response = session.get(target + "/test", timeout=5, allow_redirects=False)
-        data = response.json() if response.status_code == 200 else None
-    except (requests.RequestException, ValueError):
-        data = None
-    if (
-        not isinstance(data, dict)
-        or data.get("role") != "system"
-        or data.get("reset_ready") is not True
-    ):
-        raise HarnessError(
-            503,
-            "RESET_DISABLED",
-            "Team 2 public target is not ready for guarded grading resets; verify its grading revision first",
-        )
+                try:
+                    bundle = json.loads(evidence.read_text())
+                    body["coverage"]["system"] = acceptance_coverage(bundle["exchanges"])
+                except (ValueError, KeyError, TypeError):
+                    # Preserve the independent result journal on evidence failure.
+                    message = message or "Tester could not assemble scenario coverage evidence"
+                    body.update(aborted=True, message=message, source="tester")
+            body["coverage"]["code"] = TargetClient(self.settings, target).code_coverage(
+                identifier, deadline
+            )
+            return body, bool(message)

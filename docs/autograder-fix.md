@@ -1,5 +1,10 @@
 # Autograder review and rollout handoff
 
+**Historical November 6 review.** Its unknown-request/schema assumptions and
+private measurement protocol are superseded by the supplied full course prose
+and exact `target_url` request. Use the [current interface](autograder-interface.md)
+and [coverage definitions](coverage-measures.md) for this branch.
+
 November 6, 2026. Branch `fix/phase3-autograder`, based on `125e927`.
 The user authorized commit/push/PR during publication review. Cloud builds,
 secret/IAM changes, deployment, registry edits and public reset tests were not

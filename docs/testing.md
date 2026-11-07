@@ -873,3 +873,62 @@ bodies/UTC times/dirty source hashes, source/operation observations, runtime JSO
 and logs are in ignored `artifacts/phase4-review/`. Source SHA is base plus dirty
 files; a remote target SHA is deliberately not fabricated. The Phase 4 evidence
 draft tracks hosted, cross-team and per-teammate report material still needed.
+
+## November 7 — supplied cross-team interface conformance
+
+Source: the full course Cross-team Testing Interface v0.4.2 prose, including
+execution/error/coverage rules, plus the pod Phase 2 Q4.1/Q5.3. This supersedes
+older peer-schema assumptions in the historical entries above. The now-known
+rejected request is `{"target_url":"https://cra-phase3-api-456725640364.us-central1.run.app"}`.
+See [current protocol](autograder-interface.md) and [coverage scope](coverage-measures.md).
+
+Verified locally on branch `fix/phase3-interface-conformance`, from upstream
+main `8dfba165749afd565fbc50f52e1783046216689f`, in a separate worktree preserving
+all pre-existing uncommitted work:
+
+| Check | Result |
+| --- | --- |
+| Adapter unit/ASGI prose contracts | **119 passed** |
+| Existing domain/startup/clock/validation/Phase 4 unit tests | **348 passed** |
+| Ordinary HTTP contract stack | **4 passed, 4 conditional isolated-profile cases skipped** |
+| Instrumented isolated HTTP stack, including exact grader URL | **9 passed**, 49.39 s |
+| Each completed real batch | **353/353 passed**: 157 original Phase 3 plus 196 Phase 4 |
+| Report persistence/reset safety | **3 checks passed**: separate ordinary DB roles, immutable report and one-run rejection across reset/restart, wrong reset approval refuses without deleting data |
+| Measured reports after both service restarts | Tester report and frozen system code measure unchanged; rerun still 409 |
+| Static/schema/collection checks | Ruff lint/format, mypy, project contract/fixture validation, both role OpenAPI documents and exact 353-case suite plan passed |
+
+The exact HTTPS hostname resolves to the local TLS bridge on an **internal Docker
+network**. Only a fixed-destination host relay has an external network; test
+ports bind to loopback. The temporary CA is trusted only inside these disposable
+containers. This reproduces the literal JSON/HTTPS target selection without
+contacting or resetting Google Cloud or another team's service.
+
+The HTTP checks cover same-ID/setup forwarding before 201, both role reports,
+409 readiness, concurrent/repeated-run rejection, setup failure forwarding,
+retained pass/error/skip results after a real timeout, direct source measurements,
+zero fresh-session counts, stable reads, stale-session refusal, and setup remaining
+reachable with the project database deliberately unavailable. A pending tester
+session also blocks another setup from replacing its baseline.
+
+The final exact-request run reports **251/796 executable domain statements**,
+**component null/null** (pod list/exercise rules unavailable), and **7/10 pod
+acceptance criteria exercised** (AC-01–07 automated scenarios; AC-08–10 uncovered).
+These are execution/dispatch measures, independent of test pass rate; human review
+is not claimed. The scenario-dispatch coverage predicate is explicitly documented
+as our interpretation of the pod's concrete acceptance scenarios.
+
+Evidence remains ignored under `artifacts/contract-live/` and
+`artifacts/ordinary/` in the conformance worktree. No cloud changes, deployment,
+registry edits, public resets, new paid resources, or live peer tests were performed.
+This establishes local conformance of the known request, not hosted autograder
+success. Component definitions, acceptance-scenario interpretation, exclusive
+peer target windows, path-prefixed target support, and rollout/registry verification
+remain explicitly scoped limitations in the current protocol documentation.
+
+CI follow-up: the first upstream run passed `phase3` and eight isolated checks,
+but the two-second abort fixture expired during pytest startup on the CI runner,
+before any completed outcome existed. The test now pauses target reset requests
+only after the first scenario completes, uses a 30-second budget, and records a
+same-session pause witness. Released paused requests return a synthetic error
+without forwarding a late reset. The affected local check passed in **30.74 s**;
+production code was unchanged by this correction. The PR reruns remote CI.

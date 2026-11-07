@@ -1,142 +1,44 @@
-# Server coverage and proposed measures
+# Coverage under the supplied cross-team interface
 
-November 6, 2026 publication review. **Team 2 proposed definitions; not confirmed
-staff denominators, field names, or a promise of a particular grade.**
+The full [Cross-team Testing Interface v0.4.2 prose](https://docs.google.com/document/d/1GhEVTw3a2tNJY2arfDyWgWS94kVYfgC7/edit) defines the three `covered`, `total`, `basis` entries. Counts describe exercise, independently of correctness. Unavailable measurements use **null/null**, with a reason, never substituted zero percentages. The earlier ten-component/eighteen-transition proposal is retired: model transitions are not the requested system coverage.
 
-## Collection in the deployed grading profile
+## Code: actual target execution
 
-The system's explicit Docker `grading` target starts
-`python -m autograder.grading_server`, with coverage.py 7.17.2 collecting before
-application imports or worker-thread creation. Normal `production` images keep
-the existing uvicorn entrypoint without the coverage dependency. Both system and
-tester enable `AUTOGRADER_COVERAGE_ENABLED` and configure exact measurement
-origins plus a shared Secret Manager key. See [deployment configuration](autograder-coverage-deployment.md).
+The system Docker `grading` target runs `python -m autograder.grading_server`. Coverage.py starts **before application imports and worker creation**, measuring executable statements in six domain files: `main.py`, `sbom_validation.py`, `timestamps.py`, `phase4.py`, `purl_matching.py`, `osv_source.py`. The denominator includes zero-hit files and definition/import statements; tests, harness, SQL, third-party code, vendor schemas and CLI code are excluded. This is domain Python statement coverage, not whole-stack or test-runner coverage.
 
-For either role, ordinary POST `/test/run` acquires the existing shared execution
-lock, marks its durable session running, and begins an authenticated measurement
-window on the explicitly approved target. The window has a unique run nonce,
-instance ID, role/session binding, deadline, and separate random request token.
-The child receives only this short-lived request token, never the shared service
-key or database credentials. The existing transport guard adds test/run headers
-to **every** child Session, including raw concurrent requests, only after target
-origin/path validation. Normal CLI traffic is unchanged.
+With `AUTOGRADER_COVERAGE_ENABLED=true`, successful system setup starts a new random tracer context tied to the supplied session ID. Project requests since setup execute in that context. Startup, setup/report, health and test-adapter execution are excluded. Project `/api/v1/test/*` controls are still project requests and count any domain statements they execute. A request lock serializes domain dispatch and context changes so asynchronous and worker-thread execution cannot mix contexts; the suite's intentional concurrent writes are additionally tested without instrumentation in ordinary CI.
 
-The instrumented system serializes measured requests so global tracer contexts
-cannot mix across asyncio/sync workers. Untagged traffic uses an excluded context;
-stale/wrong-instance tokens return 409 before domain execution. Parent
-`/test/run` and authenticated coverage controls bypass this lock so child requests
-and finish calls cannot deadlock. One worker and one replica with concurrency
-greater than one are required. A recovered abandoned parent releases its old
-window using the shared report record; abort/timeout invalidates old nonces.
+`GET /test/report` snapshots the live collector into an independent stopped dataset before querying contexts. This avoids altering the live collector's filters. It returns actual executed/executable source statements and source hashes, not percentages inferred from HTTP results. No private coverage endpoint, shared service secret, shutdown flush, persistent filesystem, Docker importer or background job is required. The tester retrieves this ordinary system report by the same ID after its project requests and persists the returned measure with its immutable suite report.
 
-Before `/test/run` returns, the server exports a snapshot for that exact run and
-combines it with actual JUnit outcomes. The result and compressed trace are saved
-in the existing PostgreSQL session JSON. No shutdown flush, mounted volume,
-Docker-exec importer, background CPU or separate coverage service is required.
-The earlier local-only controller was retired; its historical artifacts remain
-under ignored `artifacts/coverage/`.
+The active collector is in process memory, requiring one worker/replica and request concurrency >=2 in the intended deployment. Before a new setup replaces the global test baseline, the old context's measure is frozen in PostgreSQL. Old-session requests bearing our optional session header are refused before execution. Subsequent sessions get fresh contexts even if they execute the same lines. Repeated report reads do not change counts; later project calls can increase current-session counts. Terminal tester reports are not recalculated. A lost/restarted/uninstrumented collector yields null/null with a reason; it never imports another session's counts. Frozen system measures and final tester reports persist in the report database across restarts.
 
-Snapshots use an independent dataset so reporting cannot change the live
-collector's query filter. File-level statement/branch statistics come directly
-from coverage.py. Physical trace context lines are mapped to their preceding
-logical executable statement for multiline conditions/calls; real coverage.py
-tests verify this translation and branch isolation. Original physical contexts
-are preserved. Redundant function/class region sections are omitted before
-adding file-level contexts once, avoiding hundreds of MB of repeated data.
-Any counted statement without a matching collected-test context is rejected.
-Incomplete attribution yields an error report retaining the genuine test results.
+The ordinary `production` image does not enable source instrumentation. Build the `grading` target and enable it on the **system** for measured reports; enabling tester-only env flags cannot measure a remote service. A peer system can implement its own collector and return the contract fields; our tester validates the ID, counts and basis without assuming our provenance extensions.
 
-The persisted gzip+base64 trace includes a SHA256, collector version, exact
-server/test/collector source hashes, definition hash/version, UTC interval and
-run/session/role/instance provenance. Secrets and coverage request tokens are not
-in these artifacts or diagnostic logs. Historical reports remain unchanged.
+## Component: unavailable without pod definitions
 
-## Code denominator
+The [pod Phase 2 specification](https://docs.google.com/document/d/1jRBiYWWyYGn-SjoQ4pHxduenk8bkCmpJAyVD0Wt8SP8/edit) Q2 describes capabilities and Q7 discusses architectural implementation choices, including Dependency-Track versus a local matcher and optional workflow services. It does **not** establish a shared component list/denominator or exercise rules. Implementation-specific functions, OSV responsibilities, SBOM inventory items and endpoint counts cannot substitute for that missing pod definition. The component entry therefore reports null/null and explains the gap. Agreeing and documenting that definition within the pod is the remaining requirement for a numeric component measure; no staff guess is used.
 
-Every executable statement identified by coverage.py in these six domain modules:
-`main.py`, `sbom_validation.py`, `timestamps.py`, `phase4.py`,
-`purl_matching.py`, `osv_source.py`.
+## System: pod acceptance criteria
 
-Statement coverage = executed logical statements / executable statements. Branch
-coverage is separate: executed branch destinations / branch destinations. The
-denominator includes zero-hit files and import/definition statements; execution
-from startup/health/unattributed traffic is excluded. Tests, harness, SQL,
-third-party packages, vendored schemas and CLI code are excluded. This is domain
-Python coverage, not whole-stack coverage. Test pass rate is not used.
+The denominator is the **ten acceptance criteria AC-01–AC-10 in pod Q4.1**. The current suite exercises the automated scenarios for AC-01–AC-07 and contains no AC-08/09/10 report-schema/audit/restart scenarios. Those three remain in the denominator as uncovered. Human review portions of AC-03/06 are not claimed as completed.
 
-## Component denominator
+The pod gives concrete scenario inputs and evaluation rules, but does not separately formalize a coverage predicate. Our implementation explicitly interprets **exercise** as dispatch of all mapped scenario inputs below, regardless of response status or whether assertions pass. This is our stated measurement rule based on the pod's scenarios, not a separately instructor-approved predicate. Missing dispatches leave a criterion uncovered. A failed assertion or failed transport may prevent later inputs and thus reduce exercise, but passing tests alone never increase coverage. Both failed and passing responses to the same dispatched scenarios count equally.
 
-Ten architectural responsibilities in [coverage-model.json](coverage-model.json),
-derived from [the existing architecture/models](models.md):
-
-| ID | Responsibility |
+| Criterion | Required scenario dispatch witnesses |
 | --- | --- |
-| C01 | Release registration/query |
-| C02 | UTC support clock and timestamp normalization |
-| C03 | CycloneDX structural validation |
-| C04 | Inventory replacement/query |
-| C05 | Transactional storage/reset |
-| C06 | Fixture vulnerability source and package matching |
-| C07 | Incident/submission persistence |
-| C08 | Deadline derivation |
-| C09 | OSV snapshot reading/range matching |
-| C10 | OSV validation/atomic import |
+| AC-01 | Four release registrations (past/current/future/missing end date), three support-boundary reads |
+| AC-02 | Shared 25-component SBOM upload and three inventory reads covering the original and isolated second release |
+| AC-03 | Malformed JSON, missing CycloneDX fields, plaintext, and valid SBOM against unknown release |
+| AC-04 | Five seeded CVE queries covering the shared precision/recall/support grouping scenario |
+| AC-05 | Known-unaffected, unknown and unavailable-source CVE queries |
+| AC-06 | Mandatory/voluntary creation and reads, invalid rationale/classification submissions |
+| AC-07 | Fixed-clock mandatory incident creation/read, exact-boundary early warning, fix update and final submission |
+| AC-08–10 | No mapped suite scenario; uncovered |
 
-A component counts only when an attributed statement executes inside one of its
-listed function bodies. The report maps it to actual test IDs. Imports, endpoint
-calls, selected names and passing tests alone do not count. Coverage is exercised
-components / 10, a binary execution metric, not all internal branches or correctness.
-
-## System-model denominator
-
-Eighteen selected domain transitions, with exact behavioral test selectors,
-parameter filters and required component witnesses in the machine-readable mapping:
-
-- M01–M07: register; duplicate conflict preserving the original; UTC support
-  expiry; initial SBOM ingestion; nested replacement; rejected invalid replacement
-  preserving inventory; reset removing releases/inventory.
-- M08–M15: mandatory incident initialization; early warning pending→met;
-  notification pending→overdue; final N/A→scheduled on a fix; final scheduled→met
-  independently; late submission remaining overdue; duplicate preserving its
-  original; voluntary stages remaining N/A with rejected submissions.
-- M16: fixture source available→outage→recovered with new matching records.
-- M17: insertion failure→rollback preserving inventory.
-- M18: absent OSV snapshot→validated, atomically activated generation.
-
-A transition counts only if its named test passes the state assertions and server
-traces from that same test execute every required component. Several transitions
-can share one sequence; the numerator counts distinct transitions, not passing
-tests or endpoints. Failed/skipped/missing assertions cannot certify transitions.
-M17/M18 stay in the denominator without HTTP-suite witnesses: separate fault/
-OSV runtime scripts do not become coverage for this run. Phase 5, startup, health
-and harness lifecycle are outside this proposed domain model.
+`autograder.coverage.acceptance_coverage` maps canonical test identities and HTTP method/path dispatches to these witnesses. It uses the complete per-run HTTP evidence before temporary files are removed. Coverage contains the distinct exercised criteria and scope in `basis`; it is neither endpoint coverage nor pass rate. An aborted suite without a complete evidence bundle reports the system measure unavailable, retaining all journaled test outcomes.
 
 ## Verification and limits
 
-The request-driven Docker profile uses the intended grading image/entrypoint,
-separate system/tester containers, 1 CPU/1 GiB, no bind mounts and no import step.
-Tests check 201 responses/OpenAPI, 200 run/report, 353 passing cases per role,
-immediate measured reports, compressed trace hashes, every counted statement's
-context, consecutive-session isolation and cached retry. Runtime checks verify
-measured report survival across domain reset/restart, hard interruption recovery,
-subprocess timeout cleanup and reset refusal for an unapproved database.
+Contract tests include malformed requests, failure envelopes, readiness, one-run rules, upstream setup errors and immutable report lookup. Isolated HTTP tests execute the real 353-case suite against both an internal target address and the exact rejected HTTPS `target_url`, then retrieve both reports. A direct system-only test observes zero covered statements before project calls, actual growth after a request, stable reads, frozen prior-session counts, and zero fresh-session counts. A short-budget tester verifies partial results, error/skip classifications and repeated-run rejection after abort.
 
-Current fixture-suite evidence per role: **245/796 statements (30.78%)**, **75/240
-branches (31.25%)**, **8/10 components (80%)**, **16/18 model transitions (88.89%)**.
-C09/C10 and M17/M18 remain unexercised. Ordinary uninstrumented HTTP tests also
-run separately: the serialized measurement run does not prove real concurrency.
-See `artifacts/grading-live/` and [review handoff](autograder-fix.md) for results.
-
-This verifies the deployed execution design locally, not an executed Cloud Run
-rollout. Actual Cloud Run traffic, IAM/secret bindings, single-replica routing
-and hosted measurements remain rollout gates. Tracer context history lives in
-instance memory until it stops; monitor memory during extended grading windows.
-An evicted or misrouted collector fails closed rather than mixing runs.
-
-Peer origins without explicitly configured instrumentation remain unavailable.
-No extension calls or service keys are sent to them. The grader's rejected fields,
-cross-role session protocol and scorable coverage schema remain unknown. Tester
-setup still selects its target; it does not fabricate a system-role session.
-
-References: [coverage contexts](https://coverage.readthedocs.io/en/latest/contexts.html),
-[Coverage API](https://coverage.readthedocs.io/en/latest/api_coverage.html).
+These checks establish the deployed **execution design locally** using the intended grading entrypoint. They do not establish that public Cloud Run revisions have been updated. No public deployment/reset is performed by this change. Registered URLs/access notes and independent peer cross-team runs remain operational checks, separate from local contract conformance.
