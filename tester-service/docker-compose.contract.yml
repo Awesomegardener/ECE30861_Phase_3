@@ -46,7 +46,7 @@ services:
       AUTOGRADER_ENABLED: "true"
       AUTOGRADER_ALLOW_RESET: "true"
       AUTOGRADER_APPROVED_TARGETS: https://cra-phase3-api-456725640364.us-central1.run.app
-      AUTOGRADER_RUN_TIMEOUT_SECONDS: "2"
+      AUTOGRADER_RUN_TIMEOUT_SECONDS: "30"
     volumes:
       - ${HARNESS_TLS_DIR:?Generate the isolated test CA}:/tls:ro
     depends_on:

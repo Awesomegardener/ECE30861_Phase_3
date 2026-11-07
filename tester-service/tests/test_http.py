@@ -198,8 +198,16 @@ def test_setup_failure_is_forwarded_and_does_not_create_runnable_session(urls):
 def test_abort_preserves_partial_results_and_rejects_later_runs():
     base = os.environ["HARNESS_TIMEOUT_URL"]
     assert base.startswith("http://127.0.0.1:")
-    ready = call(base, "tester", "POST", "/test/setup", 201, json={"target_url": TEAM2})
-    failure = call(base, "tester", "POST", "/test/run", 500, json=ready)
+    control = Path(os.environ["HARNESS_CONTROL_DIR"])
+    (control / "pause-observed.json").unlink(missing_ok=True)
+    (control / "fault.json").write_text(json.dumps({"pause_after_first_test": True}))
+    try:
+        ready = call(base, "tester", "POST", "/test/setup", 201, json={"target_url": TEAM2})
+        failure = call(base, "tester", "POST", "/test/run", 500, json=ready)
+        observed = json.loads((control / "pause-observed.json").read_text())
+        assert observed["session_id"] == ready["session_id"] and observed["reset_request"] >= 2
+    finally:
+        (control / "fault.json").unlink(missing_ok=True)
     assert failure["source"] == "tester" and failure["message"]
     report = call(base, "tester", "GET", "/test/report", params=ready)
     check_suite(report)

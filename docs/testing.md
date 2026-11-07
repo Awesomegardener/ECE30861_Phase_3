@@ -924,3 +924,11 @@ This establishes local conformance of the known request, not hosted autograder
 success. Component definitions, acceptance-scenario interpretation, exclusive
 peer target windows, path-prefixed target support, and rollout/registry verification
 remain explicitly scoped limitations in the current protocol documentation.
+
+CI follow-up: the first upstream run passed `phase3` and eight isolated checks,
+but the two-second abort fixture expired during pytest startup on the CI runner,
+before any completed outcome existed. The test now pauses target reset requests
+only after the first scenario completes, uses a 30-second budget, and records a
+same-session pause witness. Released paused requests return a synthetic error
+without forwarding a late reset. The affected local check passed in **30.74 s**;
+production code was unchanged by this correction. The PR reruns remote CI.
