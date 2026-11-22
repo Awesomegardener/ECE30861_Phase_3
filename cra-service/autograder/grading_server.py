@@ -45,6 +45,8 @@ def main():
         "phase4.py",
         "purl_matching.py",
         "osv_source.py",
+        "audit.py",
+        "reports.py",
     )
     collector = coverage.Coverage(
         data_file=None, branch=True, config_file=False, include=[str(root / name) for name in files]
