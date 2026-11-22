@@ -1,4 +1,4 @@
-name: CRA Phase 3 and 4 checks
+name: CRA Phase 3, 4 and 5 checks
 
 on: [push, pull_request, workflow_dispatch]
 
@@ -30,6 +30,9 @@ jobs:
         run: |
           set -euo pipefail
           python -m pytest cra-service --allow-reset --base-url http://127.0.0.1:18080 --capture-http-bodies --tested-commit "$GITHUB_SHA" --junitxml=artifacts/results.xml
+          python scripts/check_ac10_restart.py seed --base-url http://127.0.0.1:18080 --allow-reset --snapshot artifacts/ac10-snapshot.json
+          docker compose -f cra-service/docker-compose.test.yml restart api
+          python scripts/check_ac10_restart.py verify --base-url http://127.0.0.1:18080 --snapshot artifacts/ac10-snapshot.json | tee artifacts/ac10-restart.log
           docker compose -f cra-service/docker-compose.test.yml exec -T -e CRA_RACE_TEST_ALLOW_RESET=1 api python - < scripts/check_release_reset_race.py | tee artifacts/release-reset-race.log
           docker compose -f cra-service/docker-compose.test.yml exec -T api python - < scripts/check_startup_schema.py | tee artifacts/schema-startup.json
           python scripts/check_deployment_runtime.py --project "$COMPOSE_PROJECT_NAME" --evidence-dir artifacts

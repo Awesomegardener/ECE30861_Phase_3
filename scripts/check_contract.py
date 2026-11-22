@@ -36,9 +36,10 @@ def main():
     )
     assert len(components) == 25 and len(pairs) == 25 and pairs == locked
     source = ast.parse(
-        (ROOT / "cra-service/main.py").read_text(encoding="utf-8-sig")
-        + "\n"
-        + (ROOT / "cra-service/phase4.py").read_text(encoding="utf-8")
+        "\n".join(
+            (ROOT / "cra-service" / name).read_text(encoding="utf-8-sig")
+            for name in ("main.py", "phase4.py", "reports.py", "audit.py")
+        )
     )
     methods = {"get", "post", "put", "patch", "delete"}
     implemented = set()

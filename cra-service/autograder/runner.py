@@ -1,4 +1,4 @@
-"""Run the preserved Phase 3 and expanded Phase 4 suites in a bounded subprocess."""
+"""Run the preserved Phase 3/4 suites and the Phase 5 suite in a bounded subprocess."""
 
 import datetime
 import json
@@ -15,10 +15,22 @@ from pathlib import Path
 
 from http_evidence import redact_text
 
-SUITE_FILES = ("cra-service/test_api.py", "cra-service/test_phase4_api.py")
-EXPECTED_TESTS = 353  # 157 original Phase 3 + 196 Phase 4 cases; checked against collection.
-EXPECTED_MODULE_COUNTS = {"test_api": 157, "test_phase4_api": 196}
-EXPECTED_PHASE4_AC_COUNTS = {"AC-04": 10, "AC-05": 11, "AC-06": 62, "AC-07": 113}
+SUITE_FILES = (
+    "cra-service/test_api.py",
+    "cra-service/test_phase4_api.py",
+    "cra-service/test_phase5_api.py",
+)
+# 157 original Phase 3 + 196 Phase 4 + 42 Phase 5 cases; checked against collection.
+EXPECTED_TESTS = 395
+EXPECTED_MODULE_COUNTS = {"test_api": 157, "test_phase4_api": 196, "test_phase5_api": 42}
+EXPECTED_PHASE4_AC_COUNTS = {
+    "AC-04": 10,
+    "AC-05": 11,
+    "AC-06": 62,
+    "AC-07": 113,
+    "AC-08": 30,
+    "AC-09": 6,
+}
 CHILDREN: set[subprocess.Popen] = set()
 CHILD_LOCK = threading.Lock()
 
@@ -66,9 +78,11 @@ def empty_summary():
 
 
 def acceptance_id(name):
-    for number in range(4, 8):
+    for number in range(4, 10):
         if name.startswith(f"test_ac{number:02d}"):
             return f"AC-{number:02d}"
+    if name.startswith("test_q7"):
+        return "AC-03"  # Agreed SBOM media-type input cases (pod Phase 5 Q7).
     if name.startswith("test_ac02"):
         return "AC-02"
     if name.startswith("test_ac03"):
@@ -111,7 +125,7 @@ def parse_junit(path, returncode, expected_count=EXPECTED_TESTS):
                 title=name,
                 required=True,
                 passed=outcome == "pass",
-                expected="All Phase 3 and Phase 4 pytest assertions pass",
+                expected="All Phase 3, 4 and 5 pytest assertions pass",
                 actual=redact_text(detail)[:12000],
                 outcome=outcome,
                 duration_seconds=float(case.get("time", "0")),
@@ -129,7 +143,7 @@ def parse_junit(path, returncode, expected_count=EXPECTED_TESTS):
         if len({c["id"] for c in checks}) != len(checks):
             suite_problem = "duplicate testcase identities"
         elif modules != EXPECTED_MODULE_COUNTS or phase4_acs != EXPECTED_PHASE4_AC_COUNTS:
-            suite_problem = "required Phase 3/4 test files or acceptance groups are incomplete"
+            suite_problem = "required Phase 3/4/5 test files or acceptance groups are incomplete"
     error = None
     if (
         returncode not in {0, 1}
@@ -175,7 +189,7 @@ class Runner:
 
     def execute_suite(self, target, identifier, deadline, heartbeat):
         from .client import TargetClient
-        from .coverage import acceptance_coverage
+        from .coverage import acceptance_coverage, is_own_system, model_coverage
         from .reporting import report_body, results_from_journal, suite_plan
 
         planned = suite_plan(self.settings.root)
@@ -271,4 +285,7 @@ class Runner:
             body["coverage"]["code"] = TargetClient(self.settings, target).code_coverage(
                 identifier, deadline
             )
+            if is_own_system(target):
+                # Course spec, Phase 5: include coverage.model only for same-team reports.
+                body["coverage"]["model"] = model_coverage(results)
             return body, bool(message)

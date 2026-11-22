@@ -106,7 +106,7 @@ def main():
     observations = [{"check": "isolated databases and ordinary roles", "passed": True}]
 
     report = json.loads((args.evidence_dir / "tester-report.json").read_text())
-    assert len(report["results"]) == 353 and all(
+    assert len(report["results"]) == 395 and all(
         item["outcome"] == "pass" for item in report["results"]
     )
     query = {"session_id": report["session_id"]}

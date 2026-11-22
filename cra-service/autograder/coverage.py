@@ -1,7 +1,10 @@
 """Coverage availability and observed HTTP operations, never inferred source coverage."""
 
 import hashlib
+import json
+import os
 from collections import Counter
+from pathlib import Path
 
 import yaml  # type: ignore[import-untyped]
 
@@ -32,13 +35,17 @@ def acceptance_coverage(exchanges):
     """Pod Q4.1 scenarios, counted from dispatched inputs, never pass rates.
 
     Each witness is (canonical test-name fragment, method, pod path, minimum
-    dispatches). Complete required scenarios must all appear. AC-08/09/10 have
-    no suite witnesses, so remain uncovered in the denominator of ten.
+    dispatches). Complete required scenarios must all appear. AC-10 needs a
+    service restart between two sessions (pod Phase 5 Q6), so this single-session
+    suite never covers it; it stays uncovered in the denominator of ten.
     """
     sbom = "/api/v1/releases/{releaseId}/sbom"
     release = "/api/v1/releases"
     cve = "/api/v1/vulnerabilities/{cveId}/affected-releases"
     incident = "/api/v1/incidents"
+    report_data = incident + "/{incidentId}/report-data/{stage}"
+    report = incident + "/{incidentId}/reports/{stage}"
+    audit_log = "/api/v1/audit-logs"
     rules = {
         "AC-01": [
             ("test_ac01_shared_release_cases", "POST", release, 4),
@@ -87,6 +94,41 @@ def acceptance_coverage(exchanges):
                 ("GET", incident + "/{incidentId}", 1),
             ]
         ],
+        "AC-08": [
+            (
+                "test_ac08_complete_case_has_every_field_and_no_missing_fields",
+                "PUT",
+                report_data,
+                3,
+            ),
+            ("test_ac08_complete_case_has_every_field_and_no_missing_fields", "GET", report, 3),
+            (
+                "test_ac08_incomplete_case_lists_exactly_the_two_missing_72h_fields",
+                "GET",
+                report,
+                1,
+            ),
+        ],
+        "AC-09": [
+            (
+                "test_ac09_every_change_is_logged_chronologically_with_user_and_clock",
+                "GET",
+                audit_log,
+                1,
+            ),
+            (
+                "test_ac09_audit_entries_cannot_be_edited_or_deleted[PATCH]",
+                "PATCH",
+                audit_log + "/{eventId}",
+                2,
+            ),
+            (
+                "test_ac09_audit_entries_cannot_be_edited_or_deleted[DELETE]",
+                "DELETE",
+                audit_log + "/{eventId}",
+                2,
+            ),
+        ],
     }
     covered = []
     for criterion, witnesses in rules.items():
@@ -104,7 +146,7 @@ def acceptance_coverage(exchanges):
     return {
         "covered": len(covered),
         "total": 10,
-        "basis": "Pod Phase 2 Q4.1 AC-01–AC-10; coverage means all mapped scenario inputs dispatched, irrespective of pass/fail. AC-08/09/10 are not exercised by this suite; manual review is not claimed.",
+        "basis": "Pod Phase 2 Q4.1 AC-01–AC-10; coverage means all mapped scenario inputs dispatched, irrespective of pass/fail. AC-10 requires an owner restart between two sessions (pod Phase 5 Q6) and is checked separately by scripts/check_ac10_restart.py; manual review is not claimed.",
         "criteria": covered,
     }
 
@@ -148,4 +190,40 @@ def operation_coverage(exchanges, contract_path):
             }
             for (method, path), codes in operations.items()
         ],
+    }
+
+
+DESIGN_REQUIREMENTS = Path(__file__).resolve().parents[2] / "docs/design-requirements.json"
+
+
+def is_own_system(target):
+    """coverage.model belongs only in reports where the tester tests Team 2's system."""
+    from .config import TEAM2, normalize_target
+
+    own = {TEAM2, *filter(None, os.getenv("AUTOGRADER_OWN_TARGETS", "").split(","))}
+    return normalize_target(target) in {normalize_target(value.strip()) for value in own}
+
+
+def model_coverage(results, path=DESIGN_REQUIREMENTS):
+    """Design requirements whose every witness test was executed in this session.
+
+    Executed means a pass or fail outcome; skipped or aborted tests do not count.
+    A requirement witnessed only outside the suite (the AC-10 restart script)
+    stays uncovered here rather than being claimed.
+    """
+    design = json.loads(path.read_text(encoding="utf-8"))
+    executed = {
+        r["test_id"].split("[", 1)[0] for r in results if r.get("outcome") in {"pass", "fail"}
+    }
+    covered = [
+        item["id"]
+        for item in design["requirements"]
+        if all(witness in executed for witness in item["witnesses"])
+    ]
+    return {
+        "covered": len(covered),
+        "total": len(design["requirements"]),
+        "basis": f"Team 2 design requirements {design['version']}; mapping in {design['mapping']}. "
+        "A requirement counts when every mapped test executed, irrespective of pass/fail.",
+        "requirements": covered,
     }

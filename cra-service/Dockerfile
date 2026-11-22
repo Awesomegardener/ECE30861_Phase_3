@@ -6,11 +6,12 @@ RUN pip install --no-cache-dir -r cra-service/requirements-harness.txt
 COPY cra-service/main.py cra-service/sbom_validation.py cra-service/conftest.py cra-service/test_api.py cra-service/http_evidence.py ./cra-service/
 COPY cra-service/phase4.py cra-service/timestamps.py cra-service/test_phase4_api.py ./cra-service/
 COPY cra-service/osv_source.py cra-service/purl_matching.py ./cra-service/
+COPY cra-service/audit.py cra-service/reports.py cra-service/test_phase5_api.py ./cra-service/
 COPY cra-service/vendor/osv/ ./cra-service/vendor/osv/
 COPY scripts/osv_snapshot.py ./scripts/osv_snapshot.py
 COPY cra-service/autograder/ ./cra-service/autograder/
 COPY docs/openapi.yaml ./docs/openapi.yaml
-COPY docs/autograder-openapi.yaml docs/system-test-openapi.yaml ./docs/
+COPY docs/autograder-openapi.yaml docs/system-test-openapi.yaml docs/design-requirements.json ./docs/
 COPY fixtures/ ./fixtures/
 ARG BUILD_SHA=unknown
 ENV BUILD_SHA=$BUILD_SHA

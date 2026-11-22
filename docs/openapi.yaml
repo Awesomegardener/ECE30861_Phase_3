@@ -1,7 +1,14 @@
 openapi: 3.1.0
 info:
   title: CRA Vulnerability Response Service
-  version: 1.0.0
+  version: 1.1.0
+  description: >
+    Version 1.1.0 records the Phase 4 and Phase 5 pod clarifications between
+    Team 2 and Team 6 (November 2026): report-data responses and validation,
+    audit-log ordering and actions, the CycloneDX media type, duplicate
+    submission conflicts, malformed CVE identifiers and invalid clock input.
+    Treating null report fields as missing is Team 2's proposal pending
+    Team 6 confirmation.
 servers:
   - url: http://{host}:{port}
     variables:
@@ -75,8 +82,16 @@ paths:
         - $ref: "#/components/parameters/UserId"
       requestBody:
         required: true
+        description: >
+          application/json or application/vnd.cyclonedx+json; media-type
+          parameters such as charset are ignored. Any other or missing
+          Content-Type returns 400 INVALID_REQUEST.
         content:
           application/json:
+            schema:
+              type: object
+              description: CycloneDX JSON document
+          application/vnd.cyclonedx+json:
             schema:
               type: object
               description: CycloneDX JSON document
@@ -157,6 +172,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AffectedReleaseResult"
+        "400":
+          description: Malformed CVE identifier; INVALID_REQUEST
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           description: CVE is unknown to the configured vulnerability source
           content:
@@ -297,7 +318,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/Incident"
         "400":
-          description: Invalid stage or timestamp
+          description: >
+            Invalid stage or timestamp, submitted_at before awareness_at,
+            or a not_applicable stage
           content:
             application/json:
               schema:
@@ -308,12 +331,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "409":
+          description: A submission already exists for this incident and stage; CONFLICT
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/incidents/{incidentId}/report-data/{stage}:
     put:
       summary: Add or replace data used to generate a report stage
       description: >
-        Partial report data is allowed so that the report-generation
-        operation can identify fields that are still missing.
+        Replaces the stage's whole stored data with the request body and
+        returns the generated report for that stage. Partial data is allowed
+        so that missing_fields can identify what is still needed. Values are
+        stored exactly as sent. A field belonging to another stage, an
+        unknown field or a wrong type returns 400 naming the field and
+        stores nothing. Checks run in this order: X-User-Id (400), unknown
+        incident (404), invalid stage (400), body (400). Voluntary incidents
+        and a final report before the fix is available are allowed. Each
+        successful call records one REPORT_DATA_STORED audit event.
       x-requirements: [REQ-07, REQ-08]
       parameters:
         - $ref: "#/components/parameters/IncidentId"
@@ -327,9 +363,13 @@ paths:
               $ref: "#/components/schemas/ReportData"
       responses:
         "200":
-          description: Report data stored
+          description: Report data stored; the generated report is returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeneratedReport"
         "400":
-          description: Invalid stage or field format
+          description: Invalid stage, field name or field type
           content:
             application/json:
               schema:
@@ -344,8 +384,12 @@ paths:
     get:
       summary: Generate structured data for a CRA report stage
       description: >
-        Returns the stored and system-generated fields for the requested
-        stage together with an explicit missing_fields array.
+        Returns only the supplied fields for the requested stage together
+        with an explicit missing_fields array listing required fields that
+        are absent, null, empty or whitespace-only strings, or an empty
+        member_states array. generated_at is the current (test) clock.
+        This operation stores nothing and records no audit event. Unknown
+        incident (404) is checked before an invalid stage (400).
       x-requirements: [REQ-07]
       parameters:
         - $ref: "#/components/parameters/IncidentId"
@@ -357,6 +401,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GeneratedReport"
+        "400":
+          description: Invalid stage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           description: Incident not found
           content:
@@ -366,6 +416,14 @@ paths:
   /api/v1/audit-logs:
     get:
       summary: Retrieve the append-only audit log
+      description: >
+        One event per successful change; failed requests, reads and test
+        endpoints record nothing. Actions are RELEASE_REGISTERED,
+        SBOM_STORED, SBOM_REPLACED, INCIDENT_CREATED,
+        FIX_AVAILABLE_RECORDED, SUBMISSION_RECORDED and REPORT_DATA_STORED.
+        timestamp is the (test) clock at the change. Events are returned
+        oldest first; events with equal timestamps are returned in the order
+        they were recorded.
       x-requirements: [REQ-08]
       responses:
         "200":
@@ -392,13 +450,21 @@ paths:
       x-requirements: [REQ-08]
       responses:
         "405":
-          description: Audit log is immutable
+          description: Audit log is immutable, whether or not the event exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       summary: Audit entries cannot be deleted
       x-requirements: [REQ-08]
       responses:
         "405":
-          description: Audit log is immutable
+          description: Audit log is immutable, whether or not the event exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/test/reset:
     post:
       summary: Reset system state for repeatable cross-team testing
@@ -436,6 +502,12 @@ paths:
                   now:
                     type: string
                     format: date-time
+        "400":
+          description: Invalid or timezone-naive date-time; INVALID_REQUEST
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/test/vulnerability-source:
     put:
       summary: Configure deterministic vulnerability data or simulate failure
@@ -461,6 +533,12 @@ paths:
       responses:
         "200":
           description: Test vulnerability source configured
+        "400":
+          description: Invalid fixture source request; INVALID_REQUEST
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
   parameters:
     UserId:
@@ -635,34 +713,42 @@ components:
       type: object
       description: >
         Partial data is accepted. Fields not yet supplied are reported
-        through missing_fields when the report is generated.
+        through missing_fields when the report is generated. Fields per
+        stage (CRA Art. 14(2)) - early_warning: member_states (required).
+        vulnerability_notification: product_information, exploit_nature,
+        vulnerability_nature, corrective_measures_taken, user_mitigations
+        (required); sensitivity (optional). final_report:
+        vulnerability_description, severity, impact,
+        corrective_measure_details (required); malicious_actor_information
+        (optional). null is accepted and treated as missing.
+      additionalProperties: false
       properties:
         member_states:
-          type: array
+          type: [array, "null"]
           items:
-            type: string
+            type: [string, "null"]
         product_information:
-          type: string
+          type: [string, "null"]
         exploit_nature:
-          type: string
+          type: [string, "null"]
         vulnerability_nature:
-          type: string
+          type: [string, "null"]
         corrective_measures_taken:
-          type: string
+          type: [string, "null"]
         user_mitigations:
-          type: string
+          type: [string, "null"]
         sensitivity:
-          type: string
+          type: [string, "null"]
         vulnerability_description:
-          type: string
+          type: [string, "null"]
         severity:
-          type: string
+          type: [string, "null"]
         impact:
-          type: string
+          type: [string, "null"]
         malicious_actor_information:
-          type: string
+          type: [string, "null"]
         corrective_measure_details:
-          type: string
+          type: [string, "null"]
     GeneratedReport:
       type: object
       required:

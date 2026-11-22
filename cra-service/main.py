@@ -10,9 +10,11 @@ import uuid
 from contextlib import asynccontextmanager, contextmanager
 from typing import Any, Literal
 
+import audit
 import osv_source
 import phase4
 import psycopg2
+import reports
 from autograder.api import install as install_autograder
 from autograder.config import GRADING_DATABASE, HarnessError
 from autograder.runner import shutdown_children
@@ -63,7 +65,7 @@ async def lifespan(application: FastAPI):
         shutdown_children()
 
 
-app = FastAPI(title="CRA Vulnerability Response Service", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="CRA Vulnerability Response Service", version="1.1.0", lifespan=lifespan)
 
 
 @app.get("/", include_in_schema=False)
@@ -242,7 +244,12 @@ def init_db(*, deadline: float | None = None):
             deadline,
             "CREATE TABLE IF NOT EXISTS test_clock (id INT PRIMARY KEY, now TIMESTAMP WITH TIME ZONE)",
         )
-        for statement in (*phase4.SCHEMA_STATEMENTS, *osv_source.SCHEMA_STATEMENTS):
+        for statement in (
+            *phase4.SCHEMA_STATEMENTS,
+            *osv_source.SCHEMA_STATEMENTS,
+            *audit.SCHEMA_STATEMENTS,
+            *reports.SCHEMA_STATEMENTS,
+        ):
             _startup_execute(cur, deadline, statement)
         _startup_execute(
             cur,
@@ -386,6 +393,8 @@ class ErrorResponse(BaseModel):
 
 # --- Endpoints ---
 
+SBOM_MEDIA_TYPES = ("application/json", "application/vnd.cyclonedx+json")
+
 
 def _release_response(row, reference_time):
     current_date = reference_time.astimezone(datetime.timezone.utc).date()
@@ -419,7 +428,22 @@ def create_release(
             # Capture the row and reference clock before releasing the INSERT's
             # table lock. A later reset may remove it, but cannot turn this
             # successfully committed creation into a follow-up lookup's 404.
-            response = _release_response(cur.fetchone(), _current_time(cur))
+            row = cur.fetchone()
+            now = _current_time(cur)
+            response = _release_response(row, now)
+            audit.record(
+                cur,
+                at=now,
+                user_id=x_user_id,
+                action="RELEASE_REGISTERED",
+                entity_type="release",
+                entity_id=release_id,
+                details={
+                    "product": response["product"],
+                    "version": response["version"],
+                    "support_end_date": response["support_end_date"],
+                },
+            )
     except psycopg2.errors.UniqueViolation:
         raise HTTPException(
             status_code=409,
@@ -469,13 +493,14 @@ async def upload_sbom(
     get_release(releaseId)
 
     media_type = request.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
-    if media_type != "application/json":
+    if media_type not in SBOM_MEDIA_TYPES:
         raise HTTPException(
             status_code=400,
             detail={
                 "error": {
                     "code": "INVALID_REQUEST",
-                    "message": "SBOM Content-Type must be application/json",
+                    "message": "SBOM Content-Type must be application/json or "
+                    "application/vnd.cyclonedx+json",
                 }
             },
         )
@@ -505,10 +530,28 @@ async def upload_sbom(
                 status_code=404,
                 detail={"error": {"code": "NOT_FOUND", "message": "Release not found"}},
             )
+        # An accepted SBOM (even an empty one) leaves an audit event; components
+        # cover data stored before the audit log existed.
+        cur.execute("SELECT 1 FROM components WHERE release_id = %s LIMIT 1", (releaseId,))
+        replaced = cur.fetchone() is not None or audit.has_event(
+            cur,
+            entity_type="release",
+            entity_id=releaseId,
+            actions=("SBOM_STORED", "SBOM_REPLACED"),
+        )
         cur.execute("DELETE FROM components WHERE release_id = %s", (releaseId,))
         cur.executemany(
             "INSERT INTO components (release_id, name, version, purl) VALUES (%s, %s, %s, %s)",
             [(releaseId, comp["name"], comp["version"], comp.get("purl")) for comp in components],
+        )
+        audit.record(
+            cur,
+            at=_current_time(cur),
+            user_id=x_user_id,
+            action="SBOM_REPLACED" if replaced else "SBOM_STORED",
+            entity_type="release",
+            entity_id=releaseId,
+            details={"component_count": len(components)},
         )
 
     return {"release_id": releaseId, "component_count": len(components)}
@@ -540,6 +583,7 @@ def test_reset():
         phase4.require_reset_database(cur)
         cur.execute("TRUNCATE releases CASCADE")
         phase4.reset_phase4(cur)
+        audit.reset(cur)
         cur.execute("DELETE FROM test_clock")
     return None
 
@@ -587,6 +631,7 @@ def autograder_reset(now, approved_database):
             )
         cur.execute("TRUNCATE releases CASCADE")
         phase4.reset_phase4(cur)
+        audit.reset(cur)
         cur.execute("DELETE FROM test_clock")
         if now is not None:
             cur.execute("INSERT INTO test_clock (id, now) VALUES (1, %s)", (now,))
@@ -602,6 +647,8 @@ def autograder_verify_database(approved_database):
 
 
 phase4.install(app, database, _current_time, ErrorResponse)
+reports.install(app, database, _current_time, ErrorResponse)
+audit.install(app, database, ErrorResponse)
 
 install_autograder(
     app,

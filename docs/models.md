@@ -1,4 +1,4 @@
-# Implemented CRA models: Phase 4 local increment
+# Implemented CRA models: Phase 5 local increment
 
 November 1, 2026. Local code, not proof of deployment. [Source ADR](adr-0001-osv-snapshots.md).
 
@@ -20,7 +20,7 @@ flowchart LR
  A --> C[UTC deadline calculations on read]
  T -->|Same ID and setup object| H[System HTTP adapter prepares baseline]
  T[Separate tester adapter] --> P
- P[Guarded pytest: 353 cases]
+ P[Guarded pytest: 395 cases]
  P -->|Approved grading origin only| A
  A --> W[Source execution since system setup]
  W -->|Public system report by same ID| T
@@ -30,7 +30,8 @@ flowchart LR
 
 Grading explicitly selects fixture source on disposable cra_grading/cra_test;
 production defaults to OSV. They are separate modes, never silent fallbacks.
-No external network call occurs during matching. No push alerts or complete audit.
+No external network call occurs during matching. No push alerts. Reports and the
+append-only audit log are described in [Phase 5 reports and audit log](#phase-5-reports-and-audit-log).
 
 ## Additive persistence
 
@@ -121,6 +122,60 @@ is met, >due overdue; no submission stays pending through equality. Before-aware
 mutations400, N/A submissions400, duplicates409. Fix replacement recalculates
 final status. Existing historical duplicate rows use earliest time, with no rewrite.
 The shared YAML proposal is separate and awaits review.
+
+## Phase 5 reports and audit log
+
+November 22, 2026. Local code on branch `phase5-reports-audit`; not yet deployed.
+Design requirements DR-01 to DR-10 and their tests are in
+[design-requirements.md](design-requirements.md).
+
+```mermaid
+erDiagram
+ INCIDENTS ||--o{ REPORT_DATA : "has one row per stage"
+ REPORT_DATA {
+  text incident_id PK "FK incidents, cascade"
+  text stage PK "early_warning | vulnerability_notification | final_report"
+  jsonb data "stored exactly as sent"
+  text updated_by
+  timestamptz updated_at
+ }
+ AUDIT_EVENTS {
+  bigserial seq PK "recording order, breaks timestamp ties"
+  text event_id UK
+  timestamptz event_time "test or system clock at the change"
+  text user_id
+  text action "7 agreed actions"
+  text entity_type "release | incident"
+  text entity_id "no FK; kept until a test reset"
+  jsonb details
+ }
+```
+
+```mermaid
+sequenceDiagram
+ participant C as Client
+ participant A as FastAPI route
+ participant D as PostgreSQL transaction
+ C->>A: Change request with X-User-Id
+ A->>A: Header and request validation (400)
+ A->>D: Lock entity, apply change
+ A->>D: INSERT audit_events (same transaction)
+ alt any check fails
+  D-->>A: Roll back change and audit row
+  A-->>C: 4xx, nothing logged
+ else success
+  D-->>A: Commit change and audit row together
+  A-->>C: 2xx
+ end
+ Note over D: Triggers reject UPDATE/DELETE on audit_events;<br/>TRUNCATE only in cra_grading/cra_test (test reset)
+```
+
+Report generation (`GET .../reports/{stage}`) reads `report_data` and the clock
+only; it writes nothing and records no audit event. `missing_fields` lists the
+stage's required fields that are absent, null, blank strings or an empty
+`member_states` array, in contract order. Reset truncates releases, incidents
+(cascading to submissions and report data), then audit events, then the clock:
+the same order in which change requests take their locks.
 
 ## Historical Phase 3 model notes and unchanged release/SBOM views
 
