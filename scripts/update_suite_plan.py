@@ -9,7 +9,14 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCES = ["cra-service/test_api.py", "cra-service/test_phase4_api.py", "cra-service/conftest.py"]
+SOURCES = [
+    "cra-service/test_api.py",
+    "cra-service/test_phase4_api.py",
+    "cra-service/test_phase5_api.py",
+    "cra-service/conftest.py",
+]
+SUITES = SOURCES[:3]
+EXPECTED = 395  # 157 Phase 3 + 196 Phase 4 + 42 Phase 5
 PLAN = ROOT / "cra-service/autograder/suite-plan.json"
 
 
@@ -24,7 +31,7 @@ def main():
             sys.executable,
             "-m",
             "pytest",
-            *SOURCES[:2],
+            *SUITES,
             "--collect-only",
             "-q",
             "-p",
@@ -39,10 +46,10 @@ def main():
     tests = [
         line.strip()
         for line in result.stdout.splitlines()
-        if any(line.startswith(name + "::") for name in SOURCES[:2])
+        if any(line.startswith(name + "::") for name in SUITES)
     ]
-    if len(tests) != 353 or len(set(tests)) != len(tests):
-        raise ValueError("Expected 353 unique preserved Phase 3/4 tests")
+    if len(tests) != EXPECTED or len(set(tests)) != len(tests):
+        raise ValueError(f"Expected {EXPECTED} unique Phase 3/4/5 tests, found {len(tests)}")
     plan = {
         "source_sha256": {
             name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in SOURCES
@@ -55,9 +62,9 @@ def main():
     else:
         PLAN.write_text(json.dumps(plan, indent=2) + "\n")
     print(
-        "Suite plan matches collection: 353 tests"
+        f"Suite plan matches collection: {EXPECTED} tests"
         if args.check
-        else "Updated suite plan: 353 tests"
+        else f"Updated suite plan: {EXPECTED} tests"
     )
 
 

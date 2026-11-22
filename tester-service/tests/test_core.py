@@ -124,7 +124,7 @@ def test_junit_rejects_count_correct_but_incomplete_suite(tmp_path, duplicate):
 
 
 @pytest.mark.parametrize("missing_groups", [False, True])
-def test_junit_requires_phase4_acceptance_groups(tmp_path, missing_groups):
+def test_junit_requires_phase4_and_phase5_acceptance_groups(tmp_path, missing_groups):
     root = ET.Element("testsuite")
     for index in range(157):
         ET.SubElement(
@@ -143,6 +143,16 @@ def test_junit_requires_phase4_acceptance_groups(tmp_path, missing_groups):
             )
             ET.SubElement(
                 root, "testcase", classname="app.cra-service.test_phase4_api", name=name, time="0"
+            )
+    for number, count in ((8, 30), (9, 6), (3, 6)):
+        prefix = "q7" if number == 3 else f"ac{number:02d}"
+        for index in range(count):
+            ET.SubElement(
+                root,
+                "testcase",
+                classname="app.cra-service.test_phase5_api",
+                name=f"test_{prefix}_case_{index}",
+                time="0",
             )
     path = tmp_path / "groups.xml"
     ET.ElementTree(root).write(path)

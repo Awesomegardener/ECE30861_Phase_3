@@ -1,0 +1,72 @@
+{
+  "version": "phase5-1",
+  "mapping": "docs/design-requirements.md",
+  "requirements": [
+    {
+      "id": "DR-01",
+      "statement": "Support status is computed on every read from support_end_date and the UTC (test) clock; no supported flag is stored.",
+      "model": "docs/models.md - Persisted data",
+      "witnesses": ["cra-service/test_api.py::test_ac01_support_boundary"]
+    },
+    {
+      "id": "DR-02",
+      "statement": "An SBOM replacement is one transaction; a rejected SBOM leaves the stored inventory unchanged.",
+      "model": "docs/models.md - SBOM replacement behavior",
+      "witnesses": ["cra-service/test_api.py::test_ac03_invalid_sbom_never_changes_inventory"]
+    },
+    {
+      "id": "DR-03",
+      "statement": "Nested inventory components are flattened recursively; metadata and tool components are excluded.",
+      "model": "docs/models.md - SBOM replacement behavior",
+      "witnesses": ["cra-service/test_api.py::test_ac02_nested_inventory_counts_isolation_and_replacement"]
+    },
+    {
+      "id": "DR-04",
+      "statement": "The vulnerability query distinguishes known-unaffected, unknown CVE and unavailable source.",
+      "model": "docs/models.md - Query and deadline behavior",
+      "witnesses": ["cra-service/test_phase4_api.py::test_ac05_known_unaffected_unknown_and_outage_are_distinct"]
+    },
+    {
+      "id": "DR-05",
+      "statement": "Deadline statuses are derived from stored timestamps and the clock at read time; there is no timer component.",
+      "model": "docs/models.md - Query and deadline behavior",
+      "witnesses": ["cra-service/test_phase4_api.py::test_ac07_unsubmitted_exact_clock_boundaries"]
+    },
+    {
+      "id": "DR-06",
+      "statement": "Each successful change writes its audit event in the same transaction; failed changes, reads and test controls write none.",
+      "model": "docs/models.md - Phase 5 reports and audit log",
+      "witnesses": ["cra-service/test_phase5_api.py::test_ac09_failures_reads_and_test_controls_record_nothing"]
+    },
+    {
+      "id": "DR-07",
+      "statement": "The audit log offers no edit or delete path; the database rejects UPDATE and DELETE on audit_events.",
+      "model": "docs/models.md - Phase 5 reports and audit log",
+      "witnesses": ["cra-service/test_phase5_api.py::test_ac09_audit_entries_cannot_be_edited_or_deleted"]
+    },
+    {
+      "id": "DR-08",
+      "statement": "Report data is stored per incident and stage and replaced whole; report generation is side-effect free.",
+      "model": "docs/models.md - Phase 5 reports and audit log",
+      "witnesses": [
+        "cra-service/test_phase5_api.py::test_ac08_put_replaces_the_whole_stage",
+        "cra-service/test_phase5_api.py::test_ac08_get_stores_and_audits_nothing_and_uses_the_clock"
+      ]
+    },
+    {
+      "id": "DR-09",
+      "statement": "Test reset clears releases, incidents, report data and the audit log in one transaction.",
+      "model": "docs/models.md - Phase 5 reports and audit log",
+      "witnesses": [
+        "cra-service/test_phase5_api.py::test_ac08_reset_removes_report_data",
+        "cra-service/test_phase5_api.py::test_ac09_reset_clears_the_audit_log"
+      ]
+    },
+    {
+      "id": "DR-10",
+      "statement": "All application data, including audit events, survives a service restart.",
+      "model": "docs/models.md - Phase 5 reports and audit log",
+      "witnesses": ["scripts/check_ac10_restart.py"]
+    }
+  ]
+}

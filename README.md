@@ -1,3 +1,5 @@
+> Current Phase 5 update (local branch `phase5-reports-audit`, not deployed): report data/generation, append-only audit log, shared contract 1.1.0 and 395 portable HTTP cases (157 Phase 3 + 196 Phase 4 + 42 Phase 5). See [Phase 5 implementation](docs/phase5-implementation.md) and [design requirements](docs/design-requirements.md).
+>
 > Current Phase 4 pod update: 353 portable HTTP cases (157 original + 196 Phase 4), local OSV snapshot source and proposed contract changes. See [review/results](docs/phase4-pod-update.md), [source operations](docs/osv-snapshots.md) and [ADR](docs/adr-0001-osv-snapshots.md). No Phase 4 deployment is claimed.
 
 # ECE 30861 — CRA Phase 3 and Phase 4 service
@@ -19,7 +21,7 @@ full-feed coverage, operational refresh and hosted verification remain incomplet
 [models](docs/models.md) and [submission evidence draft](docs/phase4-evidence-draft.md).
 The user reports the existing system/tester deployed at `ad42a43` with 157/157 tests;
 the new code has **not** been committed, run in remote CI or deployed.
-The hosted runner now packages **353 HTTP cases**: the unchanged original 157
+The hosted runner now packages **395 HTTP cases** (42 Phase 5 cases added November 22): the unchanged original 157
 plus 196 Phase 4 cases. OSV is the default production source; the separate
 fixture source runs only in explicitly enabled disposable databases.
 
@@ -92,7 +94,7 @@ when provided and defaults to 8080; the existing Compose mappings stay unchanged
 
 The full supplied Cross-team Testing Interface v0.4.2 now governs `/test*`.
 Tester setup accepts `target_url`, forwards the same ID/setup to system setup,
-and waits for 201. The tester runs the two portable pytest files (353 cases) once
+and waits for 201. The tester runs the three portable pytest files (395 cases) once
 per session and stores the complete results/coverage report. System setup prepares
 state and system report returns code coverage; it does not run the suite.
 Both roles use PostgreSQL session records and a shared execution lock.

@@ -7,6 +7,7 @@ import uuid
 from functools import wraps
 from typing import Annotated, Any, Literal
 
+import audit
 import osv_source
 import psycopg2
 from fastapi import APIRouter, Header, HTTPException, Path
@@ -399,6 +400,15 @@ def install(app, database, current_time, error_model):
                 ),
             )
             response = incident_response(cur, cur.fetchone(), now)
+            audit.record(
+                cur,
+                at=now,
+                user_id=x_user_id,
+                action="INCIDENT_CREATED",
+                entity_type="incident",
+                entity_id=incident_id,
+                details={"classification": incident.classification, "cve_id": incident.cve_id},
+            )
         return response
 
     @router.get(
@@ -430,6 +440,18 @@ def install(app, database, current_time, error_model):
                 (utc(update.fix_available_at), x_user_id, now, incidentId),
             )
             response = incident_response(cur, cur.fetchone(), now)
+            audit.record(
+                cur,
+                at=now,
+                user_id=x_user_id,
+                action="FIX_AVAILABLE_RECORDED",
+                entity_type="incident",
+                entity_id=incidentId,
+                details={
+                    "fix_available_at": response["fix_available_at"],
+                    "previous_fix_available_at": stamp(row["fix_available_at"]),
+                },
+            )
         return response
 
     @router.post(
@@ -472,6 +494,15 @@ def install(app, database, current_time, error_model):
                 ),
             )
             response = incident_response(cur, row, now)
+            audit.record(
+                cur,
+                at=now,
+                user_id=x_user_id,
+                action="SUBMISSION_RECORDED",
+                entity_type="incident",
+                entity_id=incidentId,
+                details={"stage": submission.stage, "submitted_at": stamp(submitted_at)},
+            )
         return response
 
     app.include_router(router)

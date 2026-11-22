@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 import requests
 import yaml
-from autograder.config import TEAM2
+from autograder.config import TEAM2, normalize_target
 from autograder.runner import EXPECTED_TESTS
 from jsonschema import Draft202012Validator
 from referencing import Registry
@@ -114,10 +114,13 @@ def workflow(urls, target):
     if os.getenv("HARNESS_CONTRACT_INTEGRATION") == "1":
         assert 0 < code["covered"] <= code["total"]
         assert code["provenance"]["session_id"] == identifier
+        # AC-01..AC-09 are dispatched; AC-10 needs a restart between sessions.
         assert (
-            report["coverage"]["system"]["covered"] == 7
+            report["coverage"]["system"]["covered"] == 9
             and report["coverage"]["system"]["total"] == 10
         )
+    # coverage.model appears only when the tester targets Team 2's own system.
+    assert ("model" in report["coverage"]) == (normalize_target(target) == TEAM2)
     out = Path(os.getenv("HARNESS_EVIDENCE_DIR", ROOT / "artifacts/contract"))
     out.mkdir(parents=True, exist_ok=True)
     (out / "tester-report.json").write_text(json.dumps(report, indent=2))

@@ -1,6 +1,11 @@
 """HTTP observations must not become fabricated source/model coverage."""
 
-from autograder.coverage import operation_coverage, unavailable_coverage
+from autograder.coverage import (
+    is_own_system,
+    model_coverage,
+    operation_coverage,
+    unavailable_coverage,
+)
 
 
 def test_operation_measurement_counts_responses_and_keeps_missing_operations(tmp_path):
@@ -44,3 +49,29 @@ def test_absent_measurements_are_unavailable_not_zero_or_full_coverage():
     for metric in report.values():
         assert metric["status"] == "unavailable"
         assert metric["percent"] is None and metric["reason"]
+
+
+def test_model_coverage_only_for_own_system(monkeypatch):
+    monkeypatch.delenv("AUTOGRADER_OWN_TARGETS", raising=False)
+    assert is_own_system("https://cra-phase3-api-456725640364.us-central1.run.app/api/v1")
+    assert not is_own_system("http://136.116.160.182:8080")
+    monkeypatch.setenv("AUTOGRADER_OWN_TARGETS", "http://127.0.0.1:18080")
+    assert is_own_system("http://127.0.0.1:18080/")
+
+
+def test_model_coverage_counts_executed_witnesses_not_skips(tmp_path):
+    design = tmp_path / "design.json"
+    design.write_text(
+        '{"version": "t", "mapping": "m", "requirements": ['
+        '{"id": "DR-A", "witnesses": ["f.py::test_a"]},'
+        '{"id": "DR-B", "witnesses": ["f.py::test_b", "f.py::test_c"]},'
+        '{"id": "DR-C", "witnesses": ["scripts/outside.py"]}]}'
+    )
+    results = [
+        {"test_id": "f.py::test_a[param-1]", "outcome": "fail"},
+        {"test_id": "f.py::test_b", "outcome": "pass"},
+        {"test_id": "f.py::test_c", "outcome": "skip"},
+    ]
+    coverage = model_coverage(results, design)
+    assert coverage["covered"] == 1 and coverage["total"] == 3
+    assert coverage["requirements"] == ["DR-A"]

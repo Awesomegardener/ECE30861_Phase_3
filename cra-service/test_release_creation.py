@@ -33,6 +33,10 @@ def release_database(monkeypatch):
                 if state["clock_error"]:
                     raise psycopg2.OperationalError("Injected clock query failure")
                 self.result = {"now": state["clock"]} if state["clock"] else None
+            elif query.startswith("INSERT INTO audit_events"):
+                # The audit event is written in the same transaction as the release.
+                assert params[3] == "RELEASE_REGISTERED" and params[5] == state["row"]["release_id"]
+                self.result = None
             else:
                 pytest.fail(f"Unexpected SQL: {query}")
 
