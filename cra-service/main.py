@@ -581,6 +581,11 @@ def get_components(releaseId: str):
 def test_reset():
     with database() as conn, conn.cursor() as cur:
         phase4.require_reset_database(cur)
+    # The grading entrypoint creates schema lazily; a peer may call this reset
+    # before any /test/setup, so make sure every table it truncates exists.
+    init_db()
+    with database() as conn, conn.cursor() as cur:
+        phase4.require_reset_database(cur)
         cur.execute("TRUNCATE releases CASCADE")
         phase4.reset_phase4(cur)
         audit.reset(cur)

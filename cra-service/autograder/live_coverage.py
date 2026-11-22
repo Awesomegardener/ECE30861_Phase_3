@@ -22,6 +22,8 @@ DOMAIN_FILES = (
     "phase4.py",
     "purl_matching.py",
     "osv_source.py",
+    "audit.py",
+    "reports.py",
 )
 
 
