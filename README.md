@@ -1,4 +1,4 @@
-> Current Phase 5 update (local branch `phase5-reports-audit`, not deployed): report data/generation, append-only audit log, shared contract 1.1.0 and 395 portable HTTP cases (157 Phase 3 + 196 Phase 4 + 42 Phase 5). See [Phase 5 implementation](docs/phase5-implementation.md) and [design requirements](docs/design-requirements.md).
+> Current Phase 5 update (deployed November 22, 2026; 395/395 hosted self-test, cross-team 393/395 and 111/111, live AC-10 passed): report data/generation, append-only audit log, shared contract 1.1.0 and 395 portable HTTP cases (157 Phase 3 + 196 Phase 4 + 42 Phase 5). See [Phase 5 implementation](docs/phase5-implementation.md) and [design requirements](docs/design-requirements.md).
 >
 > Current Phase 4 pod update: 353 portable HTTP cases (157 original + 196 Phase 4), local OSV snapshot source and proposed contract changes. See [review/results](docs/phase4-pod-update.md), [source operations](docs/osv-snapshots.md) and [ADR](docs/adr-0001-osv-snapshots.md). No Phase 4 deployment is claimed.
 
