@@ -33,8 +33,8 @@ DSN secret bindings, probes and public `/test*` access are preserved.
 | CPU billing / generation | request-based CPU throttling / gen2 | same |
 | Service and revision max instances | 1 / 1 | 1 / 1 |
 | Service and revision min instances | 0 / 0 | 0 / 0 |
-| Concurrency / request timeout | 8 / 900 seconds | 4 / 900 seconds |
-| Child timeout | 600 seconds | 600 seconds |
+| Concurrency / request timeout | 8 / 900 seconds | 4 / 1900 seconds (Phase 5; was 900) |
+| Child timeout | 600 seconds | 1800 seconds (Phase 5; was 600: the 395-case hosted suite takes about 20 minutes) |
 | Coverage flag | `AUTOGRADER_COVERAGE_ENABLED=true` | same |
 | Default, approved and coverage target | `http://127.0.0.1:8080` | `https://cra-phase3-api-456725640364.us-central1.run.app` |
 | Domain storage | existing `DATABASE_URL` secret → `cra_grading` | **no domain DSN** |

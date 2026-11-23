@@ -93,7 +93,7 @@ class SessionCoverage:
         return {
             "covered": covered,
             "total": total,
-            "basis": "Executable Python source statements in the six CRA domain files; project HTTP requests since this session's setup, including /api/v1 test controls. Startup, adapter setup/report and health execution excluded.",
+            "basis": f"Executable Python source statements in the {len(DOMAIN_FILES)} CRA domain files ({', '.join(DOMAIN_FILES)}); project HTTP requests since this session's setup, including /api/v1 test controls. Startup, adapter setup/report and health execution excluded.",
             "provenance": {
                 "session_id": identifier,
                 "instance_id": self.instance_id,
