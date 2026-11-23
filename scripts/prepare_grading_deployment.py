@@ -38,7 +38,9 @@ def commands(config, system_digest, tester_digest):
             "--concurrency=" + service["concurrency"],
             "--update-env-vars=" + ",".join(k + "=" + v for k, v in service["environment"].items()),
         ]
-        args += ["--" + k + "=" + v for k, v in config["resources"].items()]
+        # Per-role overrides: the tester's 395-case run needs a longer request timeout.
+        resources = {**config["resources"], **service.get("resources", {})}
+        args += ["--" + k + "=" + v for k, v in resources.items()]
         result[role] = shlex.join(args)
     return result
 

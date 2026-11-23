@@ -1,7 +1,7 @@
 # Phase 5 implementation: reports and append-only audit log
 
-November 22, 2026. Branch `phase5-reports-audit`. Local implementation and local
-test results only; nothing here is deployed, pushed or run against Team 6 yet.
+November 22, 2026. Merged to `main` in PR #4 and PR #5 and deployed to Cloud Run
+(see [Deployment](#deployment-november-22-2026)). Not yet run against Team 6.
 
 ## What changed
 
@@ -50,8 +50,41 @@ python scripts/check_ac10_restart.py seed --base-url http://127.0.0.1:18080 --al
 python scripts/check_ac10_restart.py verify --base-url http://127.0.0.1:18080
 ```
 
+## Deployment (November 22, 2026)
+
+| Item | Value |
+| --- | --- |
+| Source commit | `1be34087eeaa29714819a8d3b270c8cfad0be32b` (main after PR #5) |
+| System image | `cra-api-grading@sha256:67a094f3353995af5b2f8ff97a0fd2e37cf348ad700788ed1c279913427b77f1` (`cloudbuild-grading.yaml`) |
+| Tester image | `cra-tester@sha256:b828661242d0732042672d3af69ca0ea68a7aff1db8364fceacf32ceb7ea5c0f` |
+| System revision (100%) | `cra-phase3-api-00012-xaz` |
+| Tester revision (100%, `--to-latest`) | `cra-phase3-tester-00007-5gv`: same image, `AUTOGRADER_RUN_TIMEOUT_SECONDS=1800`, request timeout 1900 s |
+| Rollback | `cra-phase3-api-00008-yoq` and `cra-phase3-tester-00005-ded` (Phase 4) |
+
+Built with `gcloud builds submit` from Cloud Shell and deployed with `--no-traffic`,
+checked read-only on the `phase5-system` tag URL, then promoted. Two problems were
+found and fixed on the way:
+
+- The first system build used `cloudbuild.yaml` (no `coverage` package), so the
+  grading entrypoint crashed at startup (revision `00010-xal`, never served). The
+  grading image must come from `cloudbuild-grading.yaml`.
+- The grading entrypoint creates schema only during `/test/setup`, so
+  `GET /audit-logs` returned 500 and a peer's direct reset would have failed.
+  PR #5 makes `POST /api/v1/test/reset` ensure the schema first.
+
+### Hosted self-test
+
+Session `07556c4e-a9bf-4fac-86f1-e08489a18394`, tester → public system URL:
+**395/395 passed** (157 Phase 3, 196 Phase 4, 42 Phase 5), no failures, errors
+or skips, in about 20 minutes. System coverage 9/10 (AC-01 to AC-09), model
+coverage 9/10 (DR-01 to DR-09), code coverage 354/964 statements over all eight
+domain files. A first attempt (session `940ad4ff-d5a0-48ff-972a-521f9c2fcffa`)
+hit the old 10-minute tester limit after 222 passing tests; the limit was raised
+to 30 minutes, which `deploy/grading-config.json` now records.
+
 ## Still open
 
-- Deployment to Cloud Run (the new tables are created additively at startup in `cra_grading`), the hosted 395-case self-run, and the final cross-team window with Team 6.
+- AC-10 restart check against the deployed service, after Team 6's run.
+- The final cross-team window with Team 6.
 - Component coverage remains unavailable: the pod never agreed on a component list.
 - Phase 5 report answers (to be drafted from the deployed results).

@@ -17,7 +17,10 @@ def test_candidate_commands_preserve_secrets_and_select_deployable_coverage():
     for role, command in commands.items():
         args = shlex.split(command)
         assert "--no-traffic" in args and "--max=1" in args and "--max-instances=1" in args
-        assert "--memory=1Gi" in args and "--timeout=900" in args
+        assert "--memory=1Gi" in args
+        # The tester's request must outlive its 30-minute suite limit.
+        assert ("--timeout=1900" if role == "tester" else "--timeout=900") in args
+        assert args.count(next(a for a in args if a.startswith("--timeout="))) == 1
         assert not any(
             flag.startswith(
                 ("--set-secrets", "--clear-secrets", "--env-vars-file", "--set-env-vars")
