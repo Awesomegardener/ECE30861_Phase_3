@@ -125,8 +125,8 @@ The shared YAML proposal is separate and awaits review.
 
 ## Phase 5 reports and audit log
 
-November 22, 2026. Merged to `main` (PR #4, #5) and deployed to Cloud Run as revision
-`cra-phase3-api-00012-xaz`; see [phase5-implementation.md](phase5-implementation.md).
+November 22, 2026. Merged to `main` and deployed to Cloud Run; deployment, cross-team
+and AC-10 results are in [phase5-implementation.md](phase5-implementation.md).
 Design requirements DR-01 to DR-10 and their tests are in
 [design-requirements.md](design-requirements.md).
 

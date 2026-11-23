@@ -1,7 +1,7 @@
 # Phase 5 implementation: reports and append-only audit log
 
-November 22, 2026. Merged to `main` in PR #4 and PR #5 and deployed to Cloud Run
-(see [Deployment](#deployment-november-22-2026)). Not yet run against Team 6.
+November 22, 2026. Merged to `main` (PR #4 to #8), deployed to Cloud Run, verified
+with a 395/395 hosted self-test, cross-team runs in both directions and a live AC-10 restart check.
 
 ## What changed
 
@@ -54,11 +54,11 @@ python scripts/check_ac10_restart.py verify --base-url http://127.0.0.1:18080
 
 | Item | Value |
 | --- | --- |
-| Source commit | `1be34087eeaa29714819a8d3b270c8cfad0be32b` (main after PR #5) |
+| System source commit | `1be34087eeaa29714819a8d3b270c8cfad0be32b` (main after PR #5) |
 | System image | `cra-api-grading@sha256:67a094f3353995af5b2f8ff97a0fd2e37cf348ad700788ed1c279913427b77f1` (`cloudbuild-grading.yaml`) |
-| Tester image | `cra-tester@sha256:b828661242d0732042672d3af69ca0ea68a7aff1db8364fceacf32ceb7ea5c0f` |
-| System revision (100%) | `cra-phase3-api-00012-xaz` |
-| Tester revision (100%, `--to-latest`) | `cra-phase3-tester-00007-5gv`: same image, `AUTOGRADER_RUN_TIMEOUT_SECONDS=1800`, request timeout 1900 s |
+| System traffic | 100% to latest. First promoted as `cra-phase3-api-00012-xaz`; the AC-10 restart created `cra-phase3-api-00009-tx4` from the same image |
+| Tester source commit | `440136b0e6d888bcc728295ba5aa639155767940` (main after PR #8, test-only change) |
+| Tester settings | 100% to latest, `AUTOGRADER_RUN_TIMEOUT_SECONDS=1800`, request timeout 1900 s, approved target: Team 2 system only |
 | Rollback | `cra-phase3-api-00008-yoq` and `cra-phase3-tester-00005-ded` (Phase 4) |
 
 Built with `gcloud builds submit` from Cloud Shell and deployed with `--no-traffic`,
@@ -82,9 +82,39 @@ domain files. A first attempt (session `940ad4ff-d5a0-48ff-972a-521f9c2fcffa`)
 hit the old 10-minute tester limit after 222 passing tests; the limit was raised
 to 30 minutes, which `deploy/grading-config.json` now records.
 
+### Cross-team runs (November 22, 2026)
+
+| Direction | Session | Result |
+| --- | --- | --- |
+| Our tester → Team 6 system `http://136.116.160.182:8080` (final) | `139f9cb1-868f-4d46-89f6-696f00dd6e59` | 393/395 passed, 2 failed, 0 errors; system coverage 9/10 |
+| Our tester → Team 6 system (first run) | `e1b30a39-d316-4601-a659-7e249abdb182` | 392 passed, 2 failed, 1 error |
+| Team 6 tester `http://136.116.160.182:8081` → our system | `ses-a578c538623a` | 111/111 passed (89 required, 22 informational) |
+
+Team 6 approved resetting their test data for these runs; our tester's approved
+targets were widened only for the run and then restored to our system alone.
+Team 6 also ran their suite against us at 9:37 PM ET with the same 111/111 result.
+
+The first run exposed a Team 2 test defect: `test_ac08_check_order…` asserted the
+404 error code `NOT_FOUND`, but the pod checks exact codes only for explicitly
+agreed cases and Team 6 returns `INCIDENT_NOT_FOUND`. PR #8 now checks the status
+only and makes the null-storage test fail cleanly instead of raising `KeyError`.
+The two remaining failures are pod questions, not defects in either system yet:
+
+- **Missing SBOM Content-Type:** Team 6 returns 200. The pod agreed on
+  November 22 that it returns 400; Team 6 has not yet deployed the change.
+- **Null report field:** Team 6 lists it in `missing_fields` (as we do) but
+  drops it from `data`; Team 2 proposed storing it as sent. Still open.
+
+### Live AC-10 restart check
+
+`scripts/check_ac10_restart.py` against the public system URL: seeded and
+snapshotted, restarted by deploying a new revision of the same image
+(`cra-phase3-api-00009-tx4`) and routing traffic to it, then verified at
+2026-11-23T02:57:52Z: **AC-10 passed** (2 releases, 25 components, 1 incident,
+3 stage reports and 8 audit events identical after restart).
+
 ## Still open
 
-- AC-10 restart check against the deployed service, after Team 6's run.
-- The final cross-team window with Team 6.
+- Pod decision on null report-field storage, and Team 6's deployment of the
+  agreed 400 for a missing SBOM Content-Type.
 - Component coverage remains unavailable: the pod never agreed on a component list.
-- Phase 5 report answers (to be drafted from the deployed results).
