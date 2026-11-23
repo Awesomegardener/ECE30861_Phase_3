@@ -125,7 +125,8 @@ The shared YAML proposal is separate and awaits review.
 
 ## Phase 5 reports and audit log
 
-November 22, 2026. Local code on branch `phase5-reports-audit`; not yet deployed.
+November 22, 2026. Merged to `main` (PR #4, #5) and deployed to Cloud Run as revision
+`cra-phase3-api-00012-xaz`; see [phase5-implementation.md](phase5-implementation.md).
 Design requirements DR-01 to DR-10 and their tests are in
 [design-requirements.md](design-requirements.md).
 
@@ -134,7 +135,7 @@ erDiagram
  INCIDENTS ||--o{ REPORT_DATA : "has one row per stage"
  REPORT_DATA {
   text incident_id PK "FK incidents, cascade"
-  text stage PK "early_warning | vulnerability_notification | final_report"
+  text stage PK "early_warning, vulnerability_notification or final_report"
   jsonb data "stored exactly as sent"
   text updated_by
   timestamptz updated_at
@@ -145,8 +146,8 @@ erDiagram
   timestamptz event_time "test or system clock at the change"
   text user_id
   text action "7 agreed actions"
-  text entity_type "release | incident"
-  text entity_id "no FK; kept until a test reset"
+  text entity_type "release or incident"
+  text entity_id "no FK, kept until a test reset"
   jsonb details
  }
 ```
@@ -167,7 +168,7 @@ sequenceDiagram
   D-->>A: Commit change and audit row together
   A-->>C: 2xx
  end
- Note over D: Triggers reject UPDATE/DELETE on audit_events;<br/>TRUNCATE only in cra_grading/cra_test (test reset)
+ Note over D: Triggers reject UPDATE and DELETE on audit_events<br/>TRUNCATE allowed only in cra_grading or cra_test (test reset)
 ```
 
 Report generation (`GET .../reports/{stage}`) reads `report_data` and the clock
