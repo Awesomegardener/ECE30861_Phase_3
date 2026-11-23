@@ -137,7 +137,8 @@ def test_ac08_blank_or_null_required_string_is_missing(api, value):
     data = dict(STAGE_FIELDS["final_report"], severity=value)
     report = put_report(api, identifier, "final_report", data)
     assert report["missing_fields"] == ["severity"]
-    assert report["data"]["severity"] == value
+    # Fail (not crash) if the field is dropped from data instead of stored as sent.
+    assert report["data"].get("severity", "<absent>") == value
 
 
 def test_ac08_empty_or_null_member_states_is_missing(api):
@@ -233,8 +234,9 @@ def test_ac08_check_order_header_then_incident_then_stage_then_body(api):
     response = api.request("PUT", f"/incidents/{identifier}/report-data/bogus", data="{")
     assert response.status_code == 400
     assert "stage" in response.json()["error"]["message"]
-    # GET: unknown incident first, then stage.
-    assert get_report(api, "inc-missing", "bogus", status=404)["error"]["code"] == "NOT_FOUND"
+    # GET: unknown incident first, then stage. Only the status is agreed here:
+    # the pod checks exact error codes only for explicitly agreed cases.
+    get_report(api, "inc-missing", "bogus", status=404)
     assert "stage" in get_report(api, identifier, "bogus", status=400)["error"]["message"]
 
 
